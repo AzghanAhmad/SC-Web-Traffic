@@ -79,17 +79,33 @@ The image also contains the published worker under `/app/worker` (not started by
 ## Deploying on Railway
 
 1. Create a **Railway** project and connect this repository (deploy from the **repo root** so the root `Dockerfile` is used).
-2. Add a **MySQL** (or compatible) plugin and create a database user/password.
-3. Set variables on the web service, for example:
-   - `ConnectionStrings__DefaultConnection` — use your Railway MySQL host, database name, user, and password (same format as local).
-   - `Jwt__Secret` — strong random string.
-4. Railway injects **`PORT`**; the API binds to it automatically. Reverse-proxy headers (`X-Forwarded-For`, `X-Forwarded-Proto`) are enabled so HTTPS and client IP behave correctly behind Railway’s proxy.
+2. Provision **MySQL** (Railway plugin or external) and note host, port, database name, user, and password.
+3. Open your **web** service → **Variables** and set the values below (do **not** commit passwords into `appsettings.json`; keep them only in Railway).
 
-**Worker:** The default container command is the API only. To run the worker on Railway, add a **second service** that uses the **same Docker image** and set the start command to:
+### Environment variables to set on Railway
 
-`dotnet /app/worker/SCWebTraffic.Worker.dll`
+| Variable | Required | Notes |
+|----------|----------|--------|
+| `ConnectionStrings__DefaultConnection` | **Yes** | Single-line Pomelo/MySQL connection string (see template below). |
+| `Jwt__Secret` | **Yes** (production) | Long random string (32+ characters). Used to sign auth tokens. |
+| `ASPNETCORE_ENVIRONMENT` | Recommended | Set to `Production` so Swagger and other dev-only behavior stay off. |
+| `Jwt__Issuer` | No | Defaults to `SCWebTraffic` from `appsettings.json` if omitted. |
+| `Jwt__Audience` | No | Defaults to `SCWebTraffic.Client` if omitted. |
+| `PORT` | No | **Injected by Railway** — do not set manually; the API reads it and listens on that port. |
 
-Give that service the same `ConnectionStrings__DefaultConnection` (and any other config the worker needs) as the API.
+**Connection string template** (replace placeholders; escape special characters in the password if needed):
+
+`Server=YOUR_HOST;Port=YOUR_PORT;Database=YOUR_DATABASE;User=YOUR_USER;Password=YOUR_PASSWORD;SslMode=Required;`
+
+If TLS causes connection errors with your provider, try `SslMode=Preferred` or `SslMode=None` only for debugging.
+
+**Worker service:** Add a second Railway service using the **same Docker image**, start command `dotnet /app/worker/SCWebTraffic.Worker.dll`, and give it at least the same `ConnectionStrings__DefaultConnection` (and the same `Jwt__*` values if the worker validates or issues tokens).
+
+### Linking Railway MySQL variables
+
+If Railway created variables like `MYSQLHOST`, `MYSQLPORT`, `MYSQLDATABASE`, `MYSQLUSER`, `MYSQLPASSWORD`, you can either reference them in `ConnectionStrings__DefaultConnection` using Railway’s variable interpolation, or paste one resolved connection string after copying values from the MySQL service.
+
+4. Deploy. Railway injects **`PORT`** automatically; the API binds to it and uses forwarded headers (`X-Forwarded-For`, `X-Forwarded-Proto`) behind Railway’s proxy.
 
 ## Troubleshooting
 
