@@ -1,0 +1,15 @@
+.git
+.gitignore
+**/.vs
+**/.vscode
+**/bin
+**/obj
+**/node_modules
+**/dist
+frontend/reference file
+**/*.user
+**/*.suo
+**/agent-transcripts
+**/mcps
+**/.angular
+**/coverage

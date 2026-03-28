@@ -1,0 +1,8 @@
+{
+  "name": "scwebtraffic",
+  "private": true,
+  "scripts": {
+    "start:backend": "npm run start --prefix backend",
+    "start:frontend": "npm run start --prefix frontend"
+  }
+}

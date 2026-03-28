@@ -1,0 +1,7 @@
+<Solution>
+  <Project Path="SCWebTraffic.API/SCWebTraffic.API.csproj" />
+  <Project Path="SCWebTraffic.Application/SCWebTraffic.Application.csproj" />
+  <Project Path="SCWebTraffic.Domain/SCWebTraffic.Domain.csproj" />
+  <Project Path="SCWebTraffic.Infrastructure/SCWebTraffic.Infrastructure.csproj" />
+  <Project Path="SCWebTraffic.Worker/SCWebTraffic.Worker.csproj" />
+</Solution>

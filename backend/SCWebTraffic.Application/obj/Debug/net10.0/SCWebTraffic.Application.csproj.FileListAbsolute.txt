@@ -1,0 +1,15 @@
+E:\Projects\Project 3 (B)\project\backend\SCWebTraffic.Application\bin\Debug\net10.0\SCWebTraffic.Application.deps.json
+E:\Projects\Project 3 (B)\project\backend\SCWebTraffic.Application\bin\Debug\net10.0\SCWebTraffic.Application.dll
+E:\Projects\Project 3 (B)\project\backend\SCWebTraffic.Application\bin\Debug\net10.0\SCWebTraffic.Application.pdb
+E:\Projects\Project 3 (B)\project\backend\SCWebTraffic.Application\bin\Debug\net10.0\SCWebTraffic.Domain.dll
+E:\Projects\Project 3 (B)\project\backend\SCWebTraffic.Application\bin\Debug\net10.0\SCWebTraffic.Domain.pdb
+E:\Projects\Project 3 (B)\project\backend\SCWebTraffic.Application\obj\Debug\net10.0\SCWebTraffic.Application.csproj.AssemblyReference.cache
+E:\Projects\Project 3 (B)\project\backend\SCWebTraffic.Application\obj\Debug\net10.0\SCWebTraffic.Application.GeneratedMSBuildEditorConfig.editorconfig
+E:\Projects\Project 3 (B)\project\backend\SCWebTraffic.Application\obj\Debug\net10.0\SCWebTraffic.Application.AssemblyInfoInputs.cache
+E:\Projects\Project 3 (B)\project\backend\SCWebTraffic.Application\obj\Debug\net10.0\SCWebTraffic.Application.AssemblyInfo.cs
+E:\Projects\Project 3 (B)\project\backend\SCWebTraffic.Application\obj\Debug\net10.0\SCWebTraffic.Application.csproj.CoreCompileInputs.cache
+E:\Projects\Project 3 (B)\project\backend\SCWebTraffic.Application\obj\Debug\net10.0\SCWebTra.5461A358.Up2Date
+E:\Projects\Project 3 (B)\project\backend\SCWebTraffic.Application\obj\Debug\net10.0\SCWebTraffic.Application.dll
+E:\Projects\Project 3 (B)\project\backend\SCWebTraffic.Application\obj\Debug\net10.0\refint\SCWebTraffic.Application.dll
+E:\Projects\Project 3 (B)\project\backend\SCWebTraffic.Application\obj\Debug\net10.0\SCWebTraffic.Application.pdb
+E:\Projects\Project 3 (B)\project\backend\SCWebTraffic.Application\obj\Debug\net10.0\ref\SCWebTraffic.Application.dll
