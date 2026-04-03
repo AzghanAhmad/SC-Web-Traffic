@@ -1,6 +1,20 @@
-import { Component, OnInit, ViewChild, ElementRef, AfterViewInit } from '@angular/core';
+import { Component, DestroyRef, Injector, ViewChild, ElementRef, AfterViewInit, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { MockDataService, ConversionMetric, FunnelStep } from '../../services/mock-data.service';
+import { toObservable, takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { forkJoin, of, type Observable } from 'rxjs';
+import { catchError, map, switchMap } from 'rxjs/operators';
+import type {
+  ConversionMetric,
+  FunnelStep,
+  TrafficOverviewResponse,
+  ConversionPointDto,
+  FunnelStepDto,
+  PagePointDto,
+} from '../../models/analytics.types';
+import { ActiveSiteService } from '../../services/active-site.service';
+import { TrafficApiService } from '../../services/traffic-api.service';
+import { httpErrorMessage } from '../../utils/analytics.helpers';
+import { OutlineIconComponent } from '../../shared/outline-icon/outline-icon.component';
 import { Chart, registerables } from 'chart.js';
 
 Chart.register(...registerables);
@@ -8,20 +22,23 @@ Chart.register(...registerables);
 @Component({
   selector: 'app-conversions',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, OutlineIconComponent],
   template: `
     <div class="page-container">
+      @if (loadError()) {
+        <div class="error-banner">{{ loadError() }}</div>
+      }
       <div class="page-header animate-in">
-        <h1 class="page-title">💰 Conversions</h1>
+        <h1 class="page-title">Conversions</h1>
         <p class="page-subtitle">Track your conversion performance and funnel efficiency</p>
       </div>
 
       <!-- Conversion Metrics -->
       <div class="metrics-grid">
-        @for (metric of conversionMetrics; track metric.label; let i = $index) {
+        @for (metric of conversionMetrics(); track metric.label; let i = $index) {
           <div class="metric-card animate-in" [style.animation-delay]="(i * 80) + 'ms'">
             <div class="metric-header">
-              <span class="metric-icon">{{ metric.icon }}</span>
+              <span class="metric-icon"><app-outline-icon [name]="metric.icon" size="lg"></app-outline-icon></span>
               <span class="metric-badge" [class]="metric.change >= 0 ? 'badge-up' : 'badge-down'">
                 {{ metric.change >= 0 ? '↑' : '↓' }} {{ formatChange(metric.change) }}%
               </span>
@@ -42,7 +59,10 @@ Chart.register(...registerables);
         </div>
 
         <div class="funnel-visual">
-          @for (step of funnelData; track step.label; let i = $index; let last = $last) {
+          @if (funnelData().length === 0) {
+            <p class="funnel-empty">No funnel steps returned for this site yet. Traffic and page data will populate this after more events are collected.</p>
+          }
+          @for (step of funnelData(); track step.label; let i = $index; let last = $last) {
             <div class="funnel-step">
               <div class="funnel-bar-wrapper">
                 <div class="funnel-bar" [style.width.%]="step.percentage"
@@ -72,7 +92,7 @@ Chart.register(...registerables);
         <div class="chart-header">
           <div>
             <h3 class="chart-title">Conversion Trend</h3>
-            <p class="chart-subtitle">Daily conversion rate over the last 30 days</p>
+            <p class="chart-subtitle">Daily conversions from your overview trend (last 30 days)</p>
           </div>
         </div>
         <div class="chart-container">
@@ -83,6 +103,15 @@ Chart.register(...registerables);
   `,
   styles: [`
     .page-container { padding: 28px; max-width: 1440px; margin: 0 auto; }
+    .error-banner {
+      padding: 12px 16px;
+      border-radius: var(--radius-md);
+      font-size: 13px;
+      margin-bottom: 16px;
+      border: 1px solid rgb(var(--color-border));
+      background: rgba(248, 113, 113, 0.1);
+      color: rgb(248, 113, 113);
+    }
     .page-header { margin-bottom: 28px; }
     .page-title { font-size: 24px; font-weight: 700; color: rgb(var(--color-text-primary)); letter-spacing: -0.02em; }
     .page-subtitle { font-size: 14px; color: rgb(var(--color-text-muted)); margin-top: 4px; }
@@ -100,7 +129,6 @@ Chart.register(...registerables);
       border-radius: var(--radius-lg);
       padding: 22px;
       transition: all var(--transition-base);
-      opacity: 0;
     }
     .metric-card:hover {
       border-color: rgb(var(--color-border-light));
@@ -109,7 +137,11 @@ Chart.register(...registerables);
     }
 
     .metric-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
-    .metric-icon { font-size: 24px; }
+    .metric-icon {
+      display: inline-flex;
+      align-items: center;
+      color: rgb(var(--color-text-muted));
+    }
     .metric-badge {
       padding: 3px 10px; border-radius: 9999px;
       font-size: 12px; font-weight: 600;
@@ -127,6 +159,14 @@ Chart.register(...registerables);
     .chart-subtitle { font-size: 13px; color: rgb(var(--color-text-muted)); margin-top: 2px; }
 
     .funnel-visual { display: flex; flex-direction: column; gap: 0; }
+
+    .funnel-empty {
+      margin: 0;
+      padding: 16px 4px 8px;
+      font-size: 13px;
+      color: rgb(var(--color-text-muted));
+      line-height: 1.5;
+    }
 
     .funnel-step { margin-bottom: 4px; }
 
@@ -205,66 +245,186 @@ Chart.register(...registerables);
     }
   `]
 })
-export class ConversionsComponent implements OnInit, AfterViewInit {
+export class ConversionsComponent implements AfterViewInit {
   @ViewChild('conversionChart') conversionChartRef!: ElementRef<HTMLCanvasElement>;
 
-  conversionMetrics: ConversionMetric[] = [];
-  funnelData: FunnelStep[] = [];
+  private readonly injector = inject(Injector);
+  private readonly destroyRef = inject(DestroyRef);
+  private readonly activeSite = inject(ActiveSiteService);
+  private readonly api = inject(TrafficApiService);
 
-  constructor(private dataService: MockDataService) {}
+  /** Signals: zoneless — HTTP-driven UI must use signals to repaint without user interaction. */
+  conversionMetrics = signal<ConversionMetric[]>([]);
+  funnelData = signal<FunnelStep[]>([]);
+  loadError = signal('');
+  private trendLabels = signal<string[]>([]);
+  private trendConversions = signal<number[]>([]);
+  private conversionChart: Chart | null = null;
 
-  ngOnInit() {
-    this.conversionMetrics = this.dataService.getConversionMetrics();
-    this.funnelData = this.dataService.getFunnelData();
+  constructor() {
+    const days = 30;
+    toObservable(this.activeSite.site, { injector: this.injector })
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        switchMap(site => {
+          if (!site) {
+            this.loadError.set('');
+            return of<{ metrics: ConversionMetric[]; funnel: FunnelStep[]; labels: string[]; conv: number[] } | null>(null);
+          }
+          return forkJoin({
+            overview: this.api.overview(site.siteId, days).pipe(
+              catchError(err => {
+                this.loadError.set(httpErrorMessage(err));
+                return of<TrafficOverviewResponse | null>(null);
+              }),
+            ),
+            conv: this.api.conversions(site.siteId, days).pipe(catchError(() => of<ConversionPointDto[]>([]))),
+            pages: this.api.pages(site.siteId, days).pipe(catchError(() => of<PagePointDto[]>([]))),
+          }).pipe(
+            switchMap(
+              ({ overview, conv, pages }): Observable<{
+                metrics: ConversionMetric[];
+                funnel: FunnelStep[];
+                labels: string[];
+                conv: number[];
+              } | null> => {
+                if (!overview) return of(null);
+                const urls = pages.map(p => p.pageUrl).filter(Boolean);
+                const steps = urls.length >= 2 ? urls.slice(0, 6) : ['/', '/'];
+                return this.api.funnels(site.siteId, steps, days).pipe(
+                  map(funnel => ({ overview, conv, funnel })),
+                  catchError(() => of({ overview, conv, funnel: [] as FunnelStepDto[] })),
+                  map(({ overview: ov, conv: cv, funnel }) => {
+                    const metrics: ConversionMetric[] = cv.slice(0, 4).map((c, i) => ({
+                      label: c.type,
+                      value: c.count,
+                      change: 0,
+                      icon: this.metricIcon(c.type, i),
+                    }));
+                    const fd: FunnelStep[] = funnel.map(f => ({
+                      label: f.step,
+                      visitors: f.entered,
+                      percentage: Math.round(f.conversionRate * 10) / 10,
+                      dropOff: Math.round(f.dropOffRate * 10) / 10,
+                    }));
+                    const labels = ov.trendData.map(t => t.date);
+                    const convSeries = ov.trendData.map(t => t.conversions);
+                    return { metrics, funnel: fd, labels, conv: convSeries };
+                  }),
+                );
+              },
+            ),
+          );
+        })
+      )
+      .subscribe(res => {
+        if (!res) {
+          this.conversionMetrics.set([]);
+          this.funnelData.set([]);
+          this.trendLabels.set([]);
+          this.trendConversions.set([]);
+          queueMicrotask(() => this.syncChart());
+          return;
+        }
+        this.loadError.set('');
+        this.conversionMetrics.set(res.metrics);
+        this.funnelData.set(res.funnel);
+        this.trendLabels.set(res.labels);
+        this.trendConversions.set(res.conv);
+        queueMicrotask(() => this.syncChart());
+      });
   }
 
   ngAfterViewInit() {
-    setTimeout(() => this.createConversionChart(), 500);
+    setTimeout(() => this.syncChart(), 400);
   }
 
-  formatChange(val: number): string { return Math.abs(val).toFixed(1); }
+  formatChange(val: number): string {
+    return Math.abs(val).toFixed(1);
+  }
+
+  private metricIcon(type: string, index: number): string {
+    const t = type.toLowerCase();
+    if (t.includes('purchase') || t.includes('buy') || t.includes('cart')) return 'cart';
+    if (t.includes('mail') || t.includes('news')) return 'mail';
+    if (t.includes('trial') || t.includes('play') || t.includes('start')) return 'play';
+    if (t.includes('receipt') || t.includes('order')) return 'receipt';
+    const fallbacks = ['target', 'activity', 'bar-chart', 'trend-up'];
+    return fallbacks[index % fallbacks.length];
+  }
+
+  private syncChart() {
+    const canvas = this.conversionChartRef?.nativeElement;
+    if (!canvas) return;
+    const labels = this.trendLabels();
+    const conv = this.trendConversions();
+    if (!labels.length) {
+      Chart.getChart(canvas)?.destroy();
+      this.conversionChart = null;
+      return;
+    }
+    if (!this.conversionChart) {
+      this.createConversionChart();
+    } else {
+      this.conversionChart.data.labels = labels;
+      this.conversionChart.data.datasets[0].data = conv;
+      this.conversionChart.update('active');
+    }
+  }
 
   private createConversionChart() {
     const ctx = this.conversionChartRef?.nativeElement?.getContext('2d');
     if (!ctx) return;
 
-    const days = 30;
-    const labels: string[] = [];
-    const data: number[] = [];
-
-    for (let i = days - 1; i >= 0; i--) {
-      const d = new Date();
-      d.setDate(d.getDate() - i);
-      labels.push(d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
-      data.push(parseFloat((2 + Math.random() * 6).toFixed(1)));
-    }
-
     const gradient = ctx.createLinearGradient(0, 0, 0, 280);
     gradient.addColorStop(0, 'rgba(52, 211, 153, 0.15)');
     gradient.addColorStop(1, 'rgba(52, 211, 153, 0)');
 
-    new Chart(ctx, {
+    const labels = this.trendLabels();
+    const conv = this.trendConversions();
+
+    this.conversionChart = new Chart(ctx, {
       type: 'line',
       data: {
         labels,
         datasets: [{
-          label: 'Conversion Rate %',
-          data,
+          label: 'Conversions',
+          data: conv,
           borderColor: '#34d399',
           backgroundColor: gradient,
-          borderWidth: 2, fill: true, tension: 0.4,
-          pointRadius: 0, pointHoverRadius: 5,
+          borderWidth: 2,
+          fill: true,
+          tension: 0.4,
+          pointRadius: 0,
+          pointHoverRadius: 5,
         }],
       },
       options: {
-        responsive: true, maintainAspectRatio: false,
+        responsive: true,
+        maintainAspectRatio: false,
         plugins: {
           legend: { display: false },
-          tooltip: { backgroundColor: 'rgb(22, 28, 44)', borderColor: 'rgb(38, 48, 72)', borderWidth: 1, cornerRadius: 8, padding: 12, titleColor: '#fff', bodyColor: 'rgb(148, 158, 188)' },
+          tooltip: {
+            backgroundColor: 'rgb(22, 28, 44)',
+            borderColor: 'rgb(38, 48, 72)',
+            borderWidth: 1,
+            cornerRadius: 8,
+            padding: 12,
+            titleColor: '#fff',
+            bodyColor: 'rgb(148, 158, 188)',
+          },
         },
         scales: {
-          x: { grid: { color: 'rgba(38, 48, 72, 0.5)', drawTicks: false }, ticks: { color: 'rgb(98, 108, 138)', font: { family: 'Inter', size: 11 }, maxRotation: 0 }, border: { display: false } },
-          y: { grid: { color: 'rgba(38, 48, 72, 0.5)', drawTicks: false }, ticks: { color: 'rgb(98, 108, 138)', font: { family: 'Inter', size: 11 }, callback: (v) => v + '%' }, border: { display: false } },
+          x: {
+            grid: { color: 'rgba(38, 48, 72, 0.5)', drawTicks: false },
+            ticks: { color: 'rgb(98, 108, 138)', font: { family: 'Inter', size: 11 }, maxRotation: 0 },
+            border: { display: false },
+          },
+          y: {
+            grid: { color: 'rgba(38, 48, 72, 0.5)', drawTicks: false },
+            ticks: { color: 'rgb(98, 108, 138)', font: { family: 'Inter', size: 11 } },
+            border: { display: false },
+          },
         },
       },
     });

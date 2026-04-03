@@ -31,6 +31,10 @@ namespace SCWebTraffic.Infrastructure.Persistence.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime(6)");
 
+                    b.Property<string>("DisplayName")
+                        .HasMaxLength(120)
+                        .HasColumnType("varchar(120)");
+
                     b.Property<string>("Email")
                         .IsRequired()
                         .HasMaxLength(120)

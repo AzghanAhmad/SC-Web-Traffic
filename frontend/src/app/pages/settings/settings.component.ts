@@ -1,6 +1,7 @@
-import { Component, ChangeDetectorRef } from '@angular/core';
+import { Component, ChangeDetectorRef, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { AuthService } from '../../services/auth.service';
 
 @Component({
   selector: 'app-settings',
@@ -584,15 +585,15 @@ import { FormsModule } from '@angular/forms';
     }
   `]
 })
-export class SettingsComponent {
+export class SettingsComponent implements OnInit {
   activeSection = 'account';
   defaultDateRange = '7d';
   defaultView = 'overview';
   trackPageViews = true;
   trackUniqueVisitors = true;
   enableHeatmaps = true;
-  accountName = 'Admin User';
-  accountEmail = 'admin@scribecount.com';
+  accountName = '';
+  accountEmail = '';
   organization = 'ScribeCount';
   theme = 'light';
   defaultPage = 'overview';
@@ -604,7 +605,21 @@ export class SettingsComponent {
   confirmPassword = '';
   saving = false;
 
-  constructor(private cdr: ChangeDetectorRef) { }
+  constructor(
+    private cdr: ChangeDetectorRef,
+    private auth: AuthService,
+  ) { }
+
+  ngOnInit(): void {
+    const u = this.auth.user();
+    if (u) {
+      this.accountName = u.displayName;
+      this.accountEmail = u.email;
+    } else {
+      this.accountName = 'Guest';
+      this.accountEmail = '';
+    }
+  }
 
   saveSettings() {
     this.saving = true;
@@ -613,6 +628,12 @@ export class SettingsComponent {
     // Simulated save
     setTimeout(() => {
       this.saving = false;
+      if (this.accountName.trim() && this.accountEmail.trim()) {
+        this.auth.setSession({
+          displayName: this.accountName.trim(),
+          email: this.accountEmail.trim(),
+        });
+      }
       this.toastMessage = 'Settings saved!';
       this.showToast = true;
       this.cdr.detectChanges();

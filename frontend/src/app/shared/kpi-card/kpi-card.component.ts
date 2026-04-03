@@ -1,24 +1,36 @@
-import { Component, Input, OnInit, OnDestroy, ElementRef, ViewChild, AfterViewInit } from '@angular/core';
+import {
+  Component,
+  ElementRef,
+  Injector,
+  ViewChild,
+  afterNextRender,
+  effect,
+  inject,
+  input,
+  runInInjectionContext,
+  untracked,
+} from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { KpiData } from '../../services/mock-data.service';
+import type { KpiData } from '../../models/analytics.types';
+import { OutlineIconComponent } from '../outline-icon/outline-icon.component';
 
 @Component({
   selector: 'app-kpi-card',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, OutlineIconComponent],
   template: `
     <div class="kpi-card">
       <div class="kpi-header">
-        <span class="kpi-icon">{{ data.icon }}</span>
-        <span class="kpi-badge" [class]="data.change >= 0 ? 'badge-success' : 'badge-danger'">
-          <span class="arrow">{{ data.change >= 0 ? '↑' : '↓' }}</span>
-          {{ formatChange(data.change) }}%
+        <span class="kpi-icon"><app-outline-icon [name]="data().icon" size="lg"></app-outline-icon></span>
+        <span class="kpi-badge" [class]="data().change >= 0 ? 'badge-success' : 'badge-danger'">
+          <span class="arrow">{{ data().change >= 0 ? '↑' : '↓' }}</span>
+          {{ formatChange(data().change) }}%
         </span>
       </div>
       <div class="kpi-value">
-        {{ data.prefix || '' }}{{ animatedValue | number }}{{ data.suffix || '' }}
+        {{ data().prefix || '' }}{{ data().value | number }}{{ data().suffix || '' }}
       </div>
-      <div class="kpi-label">{{ data.label }}</div>
+      <div class="kpi-label">{{ data().label }}</div>
       <div class="sparkline-container">
         <canvas #sparklineCanvas></canvas>
       </div>
@@ -66,8 +78,10 @@ import { KpiData } from '../../services/mock-data.service';
     }
 
     .kpi-icon {
-      font-size: 24px;
-      line-height: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: rgb(var(--color-text-muted));
     }
 
     .kpi-badge {
@@ -120,51 +134,38 @@ import { KpiData } from '../../services/mock-data.service';
       width: 100%;
       height: 100%;
     }
-  `]
+  `],
 })
-export class KpiCardComponent implements OnInit, AfterViewInit, OnDestroy {
-  @Input() data!: KpiData;
-  @Input() index: number = 0;
-  @ViewChild('sparklineCanvas') canvasRef!: ElementRef<HTMLCanvasElement>;
+export class KpiCardComponent {
+  /** Signal input: zoneless-safe and updates when @for reuses the same row (track by label). */
+  data = input.required<KpiData>();
 
-  animatedValue = 0;
-  visible = false;
-  private animationFrame: number | null = null;
+  @ViewChild('sparklineCanvas') canvasRef?: ElementRef<HTMLCanvasElement>;
 
-  ngOnInit() {
-    // Render KPI values immediately on navigation so cards are visible in one go.
-    this.visible = true;
-    this.animatedValue = this.data.value;
-  }
+  private rafId: number | null = null;
+  private readonly injector = inject(Injector);
 
-  ngAfterViewInit() {
-    setTimeout(() => this.drawSparkline(), this.index * 100 + 300);
-  }
-
-  ngOnDestroy() {
-    if (this.animationFrame) cancelAnimationFrame(this.animationFrame);
+  constructor() {
+    afterNextRender(() => {
+      runInInjectionContext(this.injector, () => {
+        effect(() => {
+          const d = this.data();
+          void d.sparkline;
+          void d.change;
+          untracked(() => {
+            if (this.rafId != null) cancelAnimationFrame(this.rafId);
+            this.rafId = requestAnimationFrame(() => {
+              this.rafId = null;
+              this.drawSparkline();
+            });
+          });
+        });
+      });
+    });
   }
 
   formatChange(val: number): string {
     return Math.abs(val).toFixed(1);
-  }
-
-  private animateCounter() {
-    const target = this.data.value;
-    const duration = 1200;
-    const start = performance.now();
-
-    const step = (now: number) => {
-      const progress = Math.min((now - start) / duration, 1);
-      const eased = 1 - Math.pow(1 - progress, 3);
-      this.animatedValue = Math.round(target * eased * 10) / 10;
-      if (progress < 1) {
-        this.animationFrame = requestAnimationFrame(step);
-      } else {
-        this.animatedValue = target;
-      }
-    };
-    this.animationFrame = requestAnimationFrame(step);
   }
 
   private drawSparkline() {
@@ -174,27 +175,33 @@ export class KpiCardComponent implements OnInit, AfterViewInit, OnDestroy {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
+    const series = this.data().sparkline;
+    if (!series.length) return;
+
     const dpr = window.devicePixelRatio || 1;
     const rect = canvas.getBoundingClientRect();
+    if (rect.width < 1 || rect.height < 1) return;
+
     canvas.width = rect.width * dpr;
     canvas.height = rect.height * dpr;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.scale(dpr, dpr);
 
-    const data = this.data.sparkline;
     const w = rect.width;
     const h = rect.height;
-    const min = Math.min(...data);
-    const max = Math.max(...data);
+    const min = Math.min(...series);
+    const max = Math.max(...series);
     const range = max - min || 1;
+    const xDenom = Math.max(series.length - 1, 1);
 
-    const points: { x: number; y: number }[] = data.map((val, i) => ({
-      x: (i / (data.length - 1)) * w,
+    const points: { x: number; y: number }[] = series.map((val, i) => ({
+      x: (i / xDenom) * w,
       y: h - ((val - min) / range) * (h - 4) - 2,
     }));
 
-    // Gradient fill
     const gradient = ctx.createLinearGradient(0, 0, 0, h);
-    const isPositive = this.data.change >= 0;
+    const isPositive = this.data().change >= 0;
     if (isPositive) {
       gradient.addColorStop(0, 'rgba(52, 211, 153, 0.2)');
       gradient.addColorStop(1, 'rgba(52, 211, 153, 0)');
@@ -203,7 +210,6 @@ export class KpiCardComponent implements OnInit, AfterViewInit, OnDestroy {
       gradient.addColorStop(1, 'rgba(248, 113, 113, 0)');
     }
 
-    // Draw fill
     ctx.beginPath();
     ctx.moveTo(points[0].x, h);
     points.forEach(p => ctx.lineTo(p.x, p.y));
@@ -212,7 +218,6 @@ export class KpiCardComponent implements OnInit, AfterViewInit, OnDestroy {
     ctx.fillStyle = gradient;
     ctx.fill();
 
-    // Draw line
     ctx.beginPath();
     ctx.moveTo(points[0].x, points[0].y);
     for (let i = 1; i < points.length; i++) {
@@ -225,7 +230,6 @@ export class KpiCardComponent implements OnInit, AfterViewInit, OnDestroy {
     ctx.lineWidth = 2;
     ctx.stroke();
 
-    // Draw end dot
     const last = points[points.length - 1];
     ctx.beginPath();
     ctx.arc(last.x, last.y, 3, 0, Math.PI * 2);

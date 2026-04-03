@@ -156,6 +156,8 @@ public sealed class AppUser
     public Guid UserId { get; set; } = Guid.NewGuid();
     [MaxLength(120)]
     public string Email { get; set; } = string.Empty;
+    [MaxLength(120)]
+    public string? DisplayName { get; set; }
     [MaxLength(200)]
     public string PasswordHash { get; set; } = string.Empty;
     [MaxLength(60)]

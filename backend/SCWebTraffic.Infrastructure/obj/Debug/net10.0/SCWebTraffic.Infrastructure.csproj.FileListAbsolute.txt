@@ -17,3 +17,4 @@ E:\Projects\Project 3 (B)\project\backend\SCWebTraffic.Infrastructure\obj\Debug\
 E:\Projects\Project 3 (B)\project\backend\SCWebTraffic.Infrastructure\obj\Debug\net10.0\SCWebTraffic.Infrastructure.pdb
 E:\Projects\Project 3 (B)\project\backend\SCWebTraffic.Infrastructure\obj\Debug\net10.0\SCWebTraffic.Infrastructure.genruntimeconfig.cache
 E:\Projects\Project 3 (B)\project\backend\SCWebTraffic.Infrastructure\obj\Debug\net10.0\ref\SCWebTraffic.Infrastructure.dll
+E:\Projects\Project 3 (B)\project\backend\SCWebTraffic.Infrastructure\obj\Debug\net10.0\SCWebTraffic.Infrastructure.sourcelink.json

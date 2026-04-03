@@ -13,3 +13,4 @@ E:\Projects\Project 3 (B)\project\backend\SCWebTraffic.Application\obj\Debug\net
 E:\Projects\Project 3 (B)\project\backend\SCWebTraffic.Application\obj\Debug\net10.0\refint\SCWebTraffic.Application.dll
 E:\Projects\Project 3 (B)\project\backend\SCWebTraffic.Application\obj\Debug\net10.0\SCWebTraffic.Application.pdb
 E:\Projects\Project 3 (B)\project\backend\SCWebTraffic.Application\obj\Debug\net10.0\ref\SCWebTraffic.Application.dll
+E:\Projects\Project 3 (B)\project\backend\SCWebTraffic.Application\obj\Debug\net10.0\SCWebTraffic.Application.sourcelink.json

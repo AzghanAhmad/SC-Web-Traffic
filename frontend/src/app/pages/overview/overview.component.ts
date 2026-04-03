@@ -1,35 +1,65 @@
-import { Component, OnInit, signal, ViewChild, ElementRef, AfterViewInit } from '@angular/core';
+import {
+  Component,
+  DestroyRef,
+  Injector,
+  ViewChild,
+  ElementRef,
+  AfterViewInit,
+  inject,
+  signal,
+} from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { toObservable, takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { combineLatest, forkJoin, of } from 'rxjs';
+import { catchError, switchMap } from 'rxjs/operators';
 import { KpiCardComponent } from '../../shared/kpi-card/kpi-card.component';
 import { InsightCardComponent } from '../../shared/insight-card/insight-card.component';
-import { SkeletonLoaderComponent } from '../../shared/skeleton-loader/skeleton-loader.component';
-import {
-  MockDataService,
+import { OutlineIconComponent } from '../../shared/outline-icon/outline-icon.component';
+import type {
   KpiData,
   TrafficSource,
   Insight,
   TimeSeriesPoint,
-  WhatChanged
-} from '../../services/mock-data.service';
+  WhatChanged,
+  TrafficOverviewResponse,
+  SourcePointDto,
+} from '../../models/analytics.types';
 import { Chart, registerables } from 'chart.js';
+import { ActiveSiteService } from '../../services/active-site.service';
+import { TrafficApiService } from '../../services/traffic-api.service';
+import {
+  buildOverviewKpis,
+  httpErrorMessage,
+  sourcesToTrafficSources,
+  timeRangeToDays,
+  trendToTimeSeries,
+} from '../../utils/analytics.helpers';
 
 Chart.register(...registerables);
 
 @Component({
   selector: 'app-overview',
   standalone: true,
-  imports: [CommonModule, KpiCardComponent, InsightCardComponent, SkeletonLoaderComponent],
+  imports: [CommonModule, KpiCardComponent, InsightCardComponent, OutlineIconComponent],
   template: `
     <div class="page-container">
+      @if (!activeSite.site() && !activeSite.loading()) {
+        <div class="site-banner">Paste a website URL in the header to register it. All traffic insights use that site.</div>
+      }
+      @if (loadError()) {
+        <div class="error-banner">{{ loadError() }}</div>
+      }
+
       <!-- What Changed Today -->
+      @if (whatChanged().length > 0) {
       <section class="what-changed-section animate-in">
         <div class="section-header">
-          <h2 class="section-title">🔔 What Changed Today</h2>
+          <h2 class="section-title">What Changed Today</h2>
         </div>
         <div class="changes-grid">
-          @for (change of whatChanged; track change.title) {
+          @for (change of whatChanged(); track change.title) {
             <div class="change-card" [class]="'change-card--' + change.type">
-              <span class="change-icon">{{ change.icon }}</span>
+              <span class="change-icon"><app-outline-icon [name]="change.icon" size="lg"></app-outline-icon></span>
               <div class="change-content">
                 <h4>{{ change.title }}</h4>
                 <p>{{ change.description }}</p>
@@ -39,12 +69,13 @@ Chart.register(...registerables);
           }
         </div>
       </section>
+      }
 
       <!-- KPI Cards -->
       <section class="kpi-section">
         <div class="kpi-grid">
-          @for (kpi of kpiData; track kpi.label; let i = $index) {
-            <app-kpi-card [data]="kpi" [index]="i"></app-kpi-card>
+          @for (kpi of kpiData(); track kpi.label) {
+            <app-kpi-card [data]="kpi"></app-kpi-card>
           }
         </div>
       </section>
@@ -81,7 +112,7 @@ Chart.register(...registerables);
             <canvas #sourcesChart></canvas>
           </div>
           <div class="source-legend">
-            @for (source of trafficSources; track source.name) {
+            @for (source of trafficSources(); track source.name) {
               <div class="legend-item">
                 <span class="legend-dot" [style.background]="source.color"></span>
                 <span class="legend-label">{{ source.name }}</span>
@@ -93,19 +124,19 @@ Chart.register(...registerables);
       </div>
 
       <!-- Insights Panel -->
+      @if (insights().length > 0) {
       <section class="insights-section animate-in" style="animation-delay: 400ms">
         <div class="section-header">
-          <h2 class="section-title">
-            <span class="gradient-text">✨ AI Insights</span>
-          </h2>
+          <h2 class="section-title">AI Insights</h2>
           <p class="section-subtitle">Automatically detected patterns & anomalies</p>
         </div>
         <div class="insights-grid">
-          @for (insight of insights; track insight.text) {
+          @for (insight of insights(); track insight.text) {
             <app-insight-card [insight]="insight"></app-insight-card>
           }
         </div>
       </section>
+      }
     </div>
   `,
   styles: [`
@@ -113,6 +144,22 @@ Chart.register(...registerables);
       padding: 28px;
       max-width: 1440px;
       margin: 0 auto;
+    }
+
+    .site-banner, .error-banner {
+      padding: 12px 16px;
+      border-radius: var(--radius-md);
+      font-size: 13px;
+      margin-bottom: 16px;
+      border: 1px solid rgb(var(--color-border));
+    }
+    .site-banner {
+      background: rgba(99, 102, 241, 0.08);
+      color: rgb(var(--color-text-secondary));
+    }
+    .error-banner {
+      background: rgba(248, 113, 113, 0.1);
+      color: rgb(248, 113, 113);
     }
 
     /* What Changed Section */
@@ -164,8 +211,11 @@ Chart.register(...registerables);
     .change-card--milestone { border-left: 3px solid rgb(99, 102, 241); }
 
     .change-icon {
-      font-size: 28px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
       flex-shrink: 0;
+      color: rgb(var(--color-text-muted));
     }
 
     .change-content {
@@ -343,41 +393,167 @@ Chart.register(...registerables);
     }
   `]
 })
-export class OverviewComponent implements OnInit, AfterViewInit {
+export class OverviewComponent implements AfterViewInit {
   @ViewChild('trafficChart') trafficChartRef!: ElementRef<HTMLCanvasElement>;
   @ViewChild('sourcesChart') sourcesChartRef!: ElementRef<HTMLCanvasElement>;
 
-  kpiData: KpiData[] = [];
-  trafficSources: TrafficSource[] = [];
-  insights: Insight[] = [];
-  whatChanged: WhatChanged[] = [];
-  timeSeriesData: TimeSeriesPoint[] = [];
+  private readonly injector = inject(Injector);
+  private readonly destroyRef = inject(DestroyRef);
+  readonly activeSite = inject(ActiveSiteService);
+  private readonly api = inject(TrafficApiService);
+
+  /** Signals: Angular 21 is zoneless by default; async HTTP updates must notify the template. */
+  kpiData = signal<KpiData[]>([]);
+  trafficSources = signal<TrafficSource[]>([]);
+  insights = signal<Insight[]>([]);
+  whatChanged = signal<WhatChanged[]>([]);
+  timeSeriesData = signal<TimeSeriesPoint[]>([]);
   timeRange = signal<'24h' | '7d' | '30d'>('7d');
+  loadError = signal('');
 
   private trafficChart: Chart | null = null;
   private sourcesChart: Chart | null = null;
 
-  constructor(private dataService: MockDataService) {}
-
-  ngOnInit() {
-    this.kpiData = this.dataService.getKpiData();
-    this.trafficSources = this.dataService.getTrafficSources();
-    this.insights = this.dataService.getInsights();
-    this.whatChanged = this.dataService.getWhatChanged();
-    this.timeSeriesData = this.dataService.getTimeSeriesData(this.timeRange());
+  constructor() {
+    combineLatest([
+      toObservable(this.activeSite.site, { injector: this.injector }),
+      toObservable(this.timeRange, { injector: this.injector }),
+    ])
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        switchMap(([site, range]) => {
+          if (!site) {
+            this.loadError.set('');
+            return of<{ overview: TrafficOverviewResponse | null; sources: SourcePointDto[] | null }>({
+              overview: null,
+              sources: null,
+            });
+          }
+          const days = timeRangeToDays(range);
+          // Overview and sources are requested together; if one fails (e.g. CORS on a single route),
+          // still show KPIs when overview succeeds. Thunder Client often tests only one URL.
+          return forkJoin({
+            overview: this.api.overview(site.siteId, days).pipe(
+              catchError(err => {
+                this.loadError.set(httpErrorMessage(err));
+                return of<TrafficOverviewResponse | null>(null);
+              }),
+            ),
+            sources: this.api.sources(site.siteId, days).pipe(catchError(() => of<SourcePointDto[]>([]))),
+          });
+        })
+      )
+      .subscribe(res => {
+        if (!res.overview) {
+          this.applyEmpty();
+          queueMicrotask(() => this.syncCharts());
+          return;
+        }
+        this.loadError.set('');
+        this.kpiData.set(buildOverviewKpis(res.overview));
+        this.trafficSources.set(sourcesToTrafficSources(res.sources ?? []));
+        this.timeSeriesData.set(trendToTimeSeries(res.overview.trendData));
+        this.insights.set(this.buildInsights(res.overview));
+        this.whatChanged.set([]);
+        queueMicrotask(() => this.syncCharts());
+      });
   }
 
   ngAfterViewInit() {
-    setTimeout(() => {
-      this.createTrafficChart();
-      this.createSourcesChart();
-    }, 300);
+    setTimeout(() => this.syncCharts(), 300);
   }
 
   setTimeRange(range: '24h' | '7d' | '30d') {
     this.timeRange.set(range);
-    this.timeSeriesData = this.dataService.getTimeSeriesData(range);
-    this.updateTrafficChart();
+  }
+
+  private buildInsights(overview: TrafficOverviewResponse): Insight[] {
+    const t = overview.trendData;
+    const out: Insight[] = [];
+    if (t.length >= 2) {
+      const a = t[t.length - 2].visitors;
+      const b = t[t.length - 1].visitors;
+      if (a > 0 && b > a * 1.1) {
+        out.push({
+          icon: 'trend-up',
+          text: 'Latest period shows higher visitors than the previous point.',
+          highlight: `+${b - a}`,
+          type: 'success',
+        });
+      }
+    }
+    if (overview.conversions > 0) {
+      out.push({
+        icon: 'target',
+        text: 'Conversions recorded in this range.',
+        highlight: String(overview.conversions),
+        type: 'info',
+      });
+    }
+    return out.slice(0, 4);
+  }
+
+  private applyEmpty() {
+    this.kpiData.set([]);
+    this.trafficSources.set([]);
+    this.timeSeriesData.set([]);
+    this.insights.set([]);
+    this.whatChanged.set([]);
+  }
+
+  private destroyTrafficChart() {
+    const tc = this.trafficChartRef?.nativeElement;
+    if (tc) {
+      const c = Chart.getChart(tc);
+      c?.destroy();
+    }
+    this.trafficChart = null;
+  }
+
+  private destroySourcesChart() {
+    const sc = this.sourcesChartRef?.nativeElement;
+    if (sc) {
+      const c = Chart.getChart(sc);
+      c?.destroy();
+    }
+    this.sourcesChart = null;
+  }
+
+  private syncCharts() {
+    const series = this.timeSeriesData();
+    const sources = this.trafficSources();
+    const trafficEl = this.trafficChartRef?.nativeElement;
+    const sourcesEl = this.sourcesChartRef?.nativeElement;
+
+    if (!series.length) {
+      this.destroyTrafficChart();
+    } else if (trafficEl) {
+      if (!this.trafficChart) {
+        this.createTrafficChart();
+      } else {
+        this.updateTrafficChart();
+      }
+    }
+
+    if (!sources.length) {
+      this.destroySourcesChart();
+    } else if (sourcesEl) {
+      if (!this.sourcesChart) {
+        this.createSourcesChart();
+      } else {
+        this.updateSourcesChart();
+      }
+    }
+  }
+
+  private updateSourcesChart() {
+    if (!this.sourcesChart) return;
+    const sources = this.trafficSources();
+    this.sourcesChart.data.labels = sources.map(s => s.name);
+    const ds = this.sourcesChart.data.datasets[0];
+    ds.data = sources.map(s => s.value);
+    ds.backgroundColor = sources.map(s => s.color);
+    this.sourcesChart.update('active');
   }
 
   private createTrafficChart() {
@@ -392,14 +568,15 @@ export class OverviewComponent implements OnInit, AfterViewInit {
     gradient2.addColorStop(0, 'rgba(168, 85, 247, 0.15)');
     gradient2.addColorStop(1, 'rgba(168, 85, 247, 0)');
 
+    const series = this.timeSeriesData();
     this.trafficChart = new Chart(ctx, {
       type: 'line',
       data: {
-        labels: this.timeSeriesData.map(d => d.date),
+        labels: series.map(d => d.date),
         datasets: [
           {
             label: 'Visitors',
-            data: this.timeSeriesData.map(d => d.visitors),
+            data: series.map(d => d.visitors),
             borderColor: '#6366f1',
             backgroundColor: gradient1,
             borderWidth: 2,
@@ -413,7 +590,7 @@ export class OverviewComponent implements OnInit, AfterViewInit {
           },
           {
             label: 'Sessions',
-            data: this.timeSeriesData.map(d => d.sessions),
+            data: series.map(d => d.sessions),
             borderColor: '#a855f7',
             backgroundColor: gradient2,
             borderWidth: 2,
@@ -430,6 +607,9 @@ export class OverviewComponent implements OnInit, AfterViewInit {
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        layout: {
+          padding: { left: 18, right: 10 },
+        },
         interaction: {
           mode: 'index',
           intersect: false,
@@ -468,6 +648,7 @@ export class OverviewComponent implements OnInit, AfterViewInit {
         },
         scales: {
           x: {
+            offset: true,
             grid: { color: 'rgba(38, 48, 72, 0.5)', drawTicks: false },
             ticks: {
               color: 'rgb(98, 108, 138)',
@@ -493,9 +674,10 @@ export class OverviewComponent implements OnInit, AfterViewInit {
 
   private updateTrafficChart() {
     if (!this.trafficChart) return;
-    this.trafficChart.data.labels = this.timeSeriesData.map(d => d.date);
-    this.trafficChart.data.datasets[0].data = this.timeSeriesData.map(d => d.visitors);
-    this.trafficChart.data.datasets[1].data = this.timeSeriesData.map(d => d.sessions);
+    const series = this.timeSeriesData();
+    this.trafficChart.data.labels = series.map(d => d.date);
+    this.trafficChart.data.datasets[0].data = series.map(d => d.visitors);
+    this.trafficChart.data.datasets[1].data = series.map(d => d.sessions);
     this.trafficChart.update('active');
   }
 
@@ -503,13 +685,14 @@ export class OverviewComponent implements OnInit, AfterViewInit {
     const ctx = this.sourcesChartRef?.nativeElement?.getContext('2d');
     if (!ctx) return;
 
+    const sources = this.trafficSources();
     this.sourcesChart = new Chart(ctx, {
       type: 'doughnut',
       data: {
-        labels: this.trafficSources.map(s => s.name),
+        labels: sources.map(s => s.name),
         datasets: [{
-          data: this.trafficSources.map(s => s.value),
-          backgroundColor: this.trafficSources.map(s => s.color),
+          data: sources.map(s => s.value),
+          backgroundColor: sources.map(s => s.color),
           borderColor: 'rgb(16, 20, 32)',
           borderWidth: 3,
           hoverOffset: 8,

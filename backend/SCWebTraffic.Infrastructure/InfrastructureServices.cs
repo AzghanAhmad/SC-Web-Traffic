@@ -109,6 +109,7 @@ public sealed class TokenService(IConfiguration configuration) : ITokenService
             [
                 new Claim(JwtRegisteredClaimNames.Sub, user.UserId.ToString()),
                 new Claim(JwtRegisteredClaimNames.Email, user.Email),
+                new Claim("display_name", user.DisplayName ?? string.Empty),
                 new Claim(ClaimTypes.Role, user.Role)
             ],
             expires: expiresAt,
@@ -243,7 +244,13 @@ public sealed class EventCollectionService(ITrafficDbContext db) : IEventCollect
         var s when string.IsNullOrWhiteSpace(s) => DeviceType.Unknown,
         _ => DeviceType.Desktop
     };
-    private static string InferSource(string? referrer) => string.IsNullOrWhiteSpace(referrer) ? "direct" : new Uri(referrer).Host;
+    private static string InferSource(string? referrer)
+    {
+        if (string.IsNullOrWhiteSpace(referrer)) return "direct";
+        if (!Uri.TryCreate(referrer, UriKind.Absolute, out var uri) || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+            return "direct";
+        return string.IsNullOrWhiteSpace(uri.Host) ? "direct" : uri.Host;
+    }
     private static string ExtractCampaign(Dictionary<string, object?>? metadata) =>
         metadata?.TryGetValue("campaign", out var c) == true ? c?.ToString() ?? string.Empty : string.Empty;
     private static double TryDouble(Dictionary<string, object?>? metadata, string key) =>
@@ -272,15 +279,51 @@ public sealed class AnalyticsService(ITrafficDbContext db) : IAnalyticsService
             ? 0
             : (double)await events.CountAsync(x => x.EventType == EventType.Click || x.EventType == EventType.Scroll, cancellationToken) / sessionsCount;
 
-        var trend = await events
-            .GroupBy(x => x.Timestamp.Date)
-            .Select(g => new TrendPoint(
-                g.Key.ToString("yyyy-MM-dd"),
-                db.Visitors.Count(v => v.SiteId == siteId && v.LastSeenAt.Date == g.Key),
-                db.Sessions.Count(s => s.SiteId == siteId && s.StartedAt.Date == g.Key),
-                g.Count(e => e.EventType == EventType.Conversion)))
-            .OrderBy(x => x.Date)
+        var visitorDays = await db.Visitors
+            .Where(x => x.SiteId == siteId && x.LastSeenAt >= since)
+            .GroupBy(x => x.LastSeenAt.Date)
+            .Select(g => new { Day = g.Key, Count = g.Count() })
             .ToListAsync(cancellationToken);
+
+        var sessionDays = await db.Sessions
+            .Where(x => x.SiteId == siteId && x.StartedAt >= since)
+            .GroupBy(x => x.StartedAt.Date)
+            .Select(g => new { Day = g.Key, Count = g.Count() })
+            .ToListAsync(cancellationToken);
+
+        var pageViewDays = await db.PageViews
+            .Where(x => x.SiteId == siteId && x.Timestamp >= since)
+            .GroupBy(x => x.Timestamp.Date)
+            .Select(g => new { Day = g.Key, Count = g.Count() })
+            .ToListAsync(cancellationToken);
+
+        var conversionDays = await db.Conversions
+            .Where(x => x.SiteId == siteId && x.Timestamp >= since)
+            .GroupBy(x => x.Timestamp.Date)
+            .Select(g => new { Day = g.Key, Count = g.Count() })
+            .ToListAsync(cancellationToken);
+
+        var allDays = visitorDays.Select(x => x.Day)
+            .Union(sessionDays.Select(x => x.Day))
+            .Union(pageViewDays.Select(x => x.Day))
+            .Union(conversionDays.Select(x => x.Day))
+            .Distinct()
+            .OrderBy(d => d)
+            .ToList();
+
+        var vd = visitorDays.ToDictionary(x => x.Day, x => x.Count);
+        var sd = sessionDays.ToDictionary(x => x.Day, x => x.Count);
+        var pvd = pageViewDays.ToDictionary(x => x.Day, x => x.Count);
+        var cd = conversionDays.ToDictionary(x => x.Day, x => x.Count);
+
+        var trend = allDays
+            .Select(d => new TrendPoint(
+                d.ToString("yyyy-MM-dd"),
+                vd.GetValueOrDefault(d),
+                sd.GetValueOrDefault(d),
+                pvd.GetValueOrDefault(d),
+                cd.GetValueOrDefault(d)))
+            .ToList();
 
         return new TrafficOverviewResponse(visitors, sessionsCount, Math.Round(engagementRate, 4), conversionsCount, trend);
     }
@@ -288,48 +331,120 @@ public sealed class AnalyticsService(ITrafficDbContext db) : IAnalyticsService
     public async Task<IReadOnlyList<SourcePoint>> GetSourcesAsync(Guid siteId, int days, CancellationToken cancellationToken = default)
     {
         var since = DateTime.UtcNow.AddDays(-days);
-        var total = await db.Sessions.CountAsync(x => x.SiteId == siteId && x.StartedAt >= since, cancellationToken);
-        if (total == 0) return [];
-
-        return await db.Sessions
+        // Avoid translating (count * 100 / total) with a captured int — Pomelo/MySQL often throws at runtime.
+        var groups = await db.Sessions
+            .AsNoTracking()
             .Where(x => x.SiteId == siteId && x.StartedAt >= since)
             .GroupBy(x => x.Source)
-            .Select(g => new SourcePoint(g.Key, g.Count(), Math.Round((double)g.Count() * 100 / total, 2)))
-            .OrderByDescending(x => x.Sessions)
+            .Select(g => new { Source = g.Key, Count = g.Count() })
             .ToListAsync(cancellationToken);
+        var total = groups.Sum(x => x.Count);
+        if (total == 0) return [];
+        return groups
+            .OrderByDescending(x => x.Count)
+            .Select(x => new SourcePoint(
+                string.IsNullOrWhiteSpace(x.Source) ? "direct" : x.Source,
+                x.Count,
+                Math.Round((double)x.Count * 100 / total, 2)))
+            .ToList();
     }
 
     public async Task<IReadOnlyList<PagePoint>> GetPagesAsync(Guid siteId, int days, CancellationToken cancellationToken = default)
     {
         var since = DateTime.UtcNow.AddDays(-days);
-        return await db.PageViews
+        // Project only DB-translatable shapes; Math.Round + record ctor often break Pomelo/MySQL.
+        var rows = await db.PageViews
+            .AsNoTracking()
             .Where(x => x.SiteId == siteId && x.Timestamp >= since)
             .GroupBy(x => x.PageUrl)
-            .Select(g => new PagePoint(g.Key, g.Count(), Math.Round(g.Average(x => x.TimeOnPage), 2)))
+            .Select(g => new { PageUrl = g.Key, Views = g.Count(), AvgSeconds = g.Average(x => x.TimeOnPage) })
             .OrderByDescending(x => x.Views)
             .ToListAsync(cancellationToken);
+        return rows
+            .Select(x => new PagePoint(x.PageUrl, x.Views, Math.Round(x.AvgSeconds, 2)))
+            .ToList();
     }
 
     public async Task<IReadOnlyList<ConversionPoint>> GetConversionsAsync(Guid siteId, int days, CancellationToken cancellationToken = default)
     {
         var since = DateTime.UtcNow.AddDays(-days);
-        return await db.Conversions
+        var rows = await db.Conversions
+            .AsNoTracking()
             .Where(x => x.SiteId == siteId && x.Timestamp >= since)
             .GroupBy(x => x.Type)
-            .Select(g => new ConversionPoint(g.Key.ToString(), g.Count(), g.Sum(x => x.Value) ?? 0))
+            .Select(g => new { Type = g.Key, Count = g.Count(), ValueSum = g.Sum(x => x.Value) })
             .OrderByDescending(x => x.Count)
             .ToListAsync(cancellationToken);
+        return rows
+            .Select(x => new ConversionPoint(x.Type.ToString(), x.Count, x.ValueSum))
+            .ToList();
     }
 
     public async Task<IReadOnlyList<DevicePoint>> GetDevicesAsync(Guid siteId, int days, CancellationToken cancellationToken = default)
     {
         var since = DateTime.UtcNow.AddDays(-days);
-        return await db.Sessions
+        var rows = await db.Sessions
+            .AsNoTracking()
             .Where(x => x.SiteId == siteId && x.StartedAt >= since)
             .GroupBy(x => x.DeviceType)
-            .Select(g => new DevicePoint(g.Key.ToString(), g.Count()))
-            .OrderByDescending(x => x.Sessions)
+            .Select(g => new { Device = g.Key, SessionCount = g.Count() })
+            .OrderByDescending(x => x.SessionCount)
             .ToListAsync(cancellationToken);
+        return rows
+            .Select(x => new DevicePoint(x.Device.ToString(), x.SessionCount))
+            .ToList();
+    }
+
+    public async Task<IReadOnlyList<CountryPoint>> GetCountriesAsync(Guid siteId, int days, CancellationToken cancellationToken = default)
+    {
+        var since = DateTime.UtcNow.AddDays(-days);
+        var groups = await db.Sessions
+            .AsNoTracking()
+            .Where(x => x.SiteId == siteId && x.StartedAt >= since)
+            .GroupBy(x => x.Country)
+            .Select(g => new { Country = g.Key, Count = g.Count() })
+            .ToListAsync(cancellationToken);
+        var total = groups.Sum(x => x.Count);
+        if (total == 0) return [];
+        return groups
+            .OrderByDescending(x => x.Count)
+            .Select(x => new CountryPoint(
+                string.IsNullOrWhiteSpace(x.Country) ? "Unknown" : x.Country,
+                x.Count,
+                Math.Round((double)x.Count * 100 / total, 2)))
+            .ToList();
+    }
+
+    public async Task<IReadOnlyList<ReferrerPoint>> GetReferrersAsync(Guid siteId, int days, int take = 20, CancellationToken cancellationToken = default)
+    {
+        var since = DateTime.UtcNow.AddDays(-days);
+        // Load referrer strings only, aggregate in memory — avoids Pomelo/MySQL edge cases on GROUP BY long VARCHAR.
+        var referrerStrings = await db.Sessions
+            .AsNoTracking()
+            .Where(x => x.SiteId == siteId && x.StartedAt >= since)
+            .Select(x => x.Referrer)
+            .ToListAsync(cancellationToken);
+        var rows = referrerStrings
+            .Where(r => !string.IsNullOrWhiteSpace(r))
+            .GroupBy(r => r, StringComparer.Ordinal)
+            .Select(g => (Referrer: g.Key, Visits: g.Count()))
+            .OrderByDescending(x => x.Visits)
+            .Take(take)
+            .ToList();
+        return rows.Select(x => new ReferrerPoint(x.Referrer, x.Visits)).ToList();
+    }
+
+    public async Task<IReadOnlyList<CampaignPoint>> GetCampaignsAsync(Guid siteId, int days, CancellationToken cancellationToken = default)
+    {
+        var since = DateTime.UtcNow.AddDays(-days);
+        var rows = await db.Sessions
+            .AsNoTracking()
+            .Where(x => x.SiteId == siteId && x.StartedAt >= since && !string.IsNullOrWhiteSpace(x.Campaign))
+            .GroupBy(x => x.Campaign)
+            .Select(g => new { Name = g.Key, Visits = g.Count() })
+            .OrderByDescending(x => x.Visits)
+            .ToListAsync(cancellationToken);
+        return rows.Select(x => new CampaignPoint(x.Name, x.Visits, 0)).ToList();
     }
 }
 
@@ -366,12 +481,16 @@ public sealed class HeatmapService(ITrafficDbContext db) : IHeatmapService
     public async Task<IReadOnlyList<HeatmapPointDto>> GetPageHeatmapAsync(Guid siteId, string pageUrl, int days, CancellationToken cancellationToken = default)
     {
         var since = DateTime.UtcNow.AddDays(-days);
-        return await db.HeatmapData
+        var rows = await db.HeatmapData
+            .AsNoTracking()
             .Where(x => x.SiteId == siteId && x.PageUrl == pageUrl && x.Timestamp >= since)
             .GroupBy(x => new { x.X, x.Y })
-            .Select(g => new HeatmapPointDto(g.Key.X, g.Key.Y, g.Count(), (int)g.Average(x => x.ScrollDepth)))
-            .OrderByDescending(x => x.Count)
+            .Select(g => new { g.Key.X, g.Key.Y, Cnt = g.Count(), AvgScroll = g.Average(x => (double)x.ScrollDepth) })
+            .OrderByDescending(x => x.Cnt)
             .ToListAsync(cancellationToken);
+        return rows
+            .Select(x => new HeatmapPointDto(x.X, x.Y, x.Cnt, (int)Math.Round(x.AvgScroll)))
+            .ToList();
     }
 }
 

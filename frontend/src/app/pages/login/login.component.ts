@@ -2,6 +2,9 @@ import { Component, signal, HostListener } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterModule } from '@angular/router';
+import { finalize } from 'rxjs/operators';
+import { AuthService } from '../../services/auth.service';
+import { httpErrorMessage } from '../../utils/analytics.helpers';
 
 @Component({
   selector: 'app-login',
@@ -262,7 +265,10 @@ export class LoginComponent {
   generalError = signal('');
   errors = signal<{ email?: string; password?: string }>({});
 
-  constructor(private router: Router) { }
+  constructor(
+    private router: Router,
+    private auth: AuthService,
+  ) { }
 
   @HostListener('window:scroll')
   onScroll() { this.navScrolled = window.scrollY > 40; }
@@ -293,10 +299,12 @@ export class LoginComponent {
     this.generalError.set('');
     this.errors.set({});
 
-    // Simulated login — replace with AuthService when backend is ready
-    setTimeout(() => {
-      this.router.navigate(['/']);
-      this.isSubmitting.set(false);
-    }, 1200);
+    this.auth
+      .login(this.email.trim(), this.password)
+      .pipe(finalize(() => this.isSubmitting.set(false)))
+      .subscribe({
+        next: () => void this.router.navigate(['/']),
+        error: err => this.generalError.set(httpErrorMessage(err)),
+      });
   }
 }

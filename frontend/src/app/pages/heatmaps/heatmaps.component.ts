@@ -1,176 +1,158 @@
-import { Component, signal, ViewChild, ElementRef, AfterViewInit } from '@angular/core';
+import { Component, DestroyRef, Injector, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { toObservable, takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { of } from 'rxjs';
+import { catchError, map, switchMap } from 'rxjs/operators';
+import type { HeatmapPointDto, PagePointDto } from '../../models/analytics.types';
+import { ActiveSiteService } from '../../services/active-site.service';
+import { TrafficApiService } from '../../services/traffic-api.service';
+import { httpErrorMessage, timeRangeToDays } from '../../utils/analytics.helpers';
 
 @Component({
   selector: 'app-heatmaps',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, FormsModule],
   template: `
     <div class="page-container">
+      @if (loadError()) {
+        <div class="error-banner">{{ loadError() }}</div>
+      }
       <div class="page-header animate-in">
-        <h1 class="page-title">🔥 Heatmaps</h1>
-        <p class="page-subtitle">Visualize where users click and how far they scroll</p>
+        <h1 class="page-title">Heatmaps</h1>
+        <p class="page-subtitle">Click coordinates and scroll depth from tracked events</p>
       </div>
 
-      <!-- Toggle -->
-      <div class="heatmap-toggle animate-in" style="animation-delay: 80ms">
+      <div class="toolbar animate-in" style="animation-delay: 80ms">
+        <label class="field-label" for="heatmap-page">Page URL</label>
+        <select id="heatmap-page" class="page-select" [(ngModel)]="selectedPageUrl" (ngModelChange)="onPageChange()">
+          @for (p of pageOptions(); track p) {
+            <option [value]="p">{{ p }}</option>
+          }
+        </select>
         <div class="toggle-group">
-          <button [class.active]="activeTab() === 'click'" (click)="activeTab.set('click')">Click Heatmap</button>
-          <button [class.active]="activeTab() === 'scroll'" (click)="activeTab.set('scroll')">Scroll Depth</button>
+          <button type="button" [class.active]="activeTab() === 'click'" (click)="activeTab.set('click'); loadHeatmap()">Click map</button>
+          <button type="button" [class.active]="activeTab() === 'scroll'" (click)="activeTab.set('scroll'); loadHeatmap()">Scroll depth</button>
         </div>
       </div>
 
-      <!-- Click Heatmap -->
       @if (activeTab() === 'click') {
         <section class="card heatmap-card animate-in" style="animation-delay: 150ms">
           <div class="chart-header">
             <div>
-              <h3 class="chart-title">Click Heatmap — /home</h3>
-              <p class="chart-subtitle">Shows where users click the most</p>
+              <h3 class="chart-title">Click density</h3>
+              <p class="chart-subtitle">Normalized positions (aggregated X/Y buckets)</p>
             </div>
             <div class="heatmap-stats">
               <div class="stat">
-                <span class="stat-value">12,450</span>
-                <span class="stat-label">Total Clicks</span>
+                <span class="stat-value">{{ totalClicks() | number }}</span>
+                <span class="stat-label">Total clicks</span>
               </div>
               <div class="stat">
-                <span class="stat-value">847</span>
-                <span class="stat-label">Unique Areas</span>
+                <span class="stat-value">{{ points().length | number }}</span>
+                <span class="stat-label">Cells</span>
               </div>
             </div>
           </div>
 
           <div class="heatmap-viewport">
-            <div class="mock-page" #clickMap>
-              <!-- Mock page header -->
-              <div class="mock-nav">
-                <div class="mock-logo"></div>
-                <div class="mock-nav-links">
-                  <div class="mock-link"></div>
-                  <div class="mock-link"></div>
-                  <div class="mock-link"></div>
-                  <div class="mock-link mock-link-cta">
-                    <div class="hotspot hotspot-intense" style="top: -8px; left: -8px;"></div>
-                  </div>
+            <div class="heatmap-canvas">
+              @for (pt of points(); track $index) {
+                <div
+                  class="heat-dot"
+                  [style.left.%]="pt.xPct"
+                  [style.top.%]="pt.yPct"
+                  [style.opacity]="pt.opacity"
+                  [title]="pt.count + ' clicks'">
                 </div>
-              </div>
-
-              <!-- Mock hero -->
-              <div class="mock-hero">
-                <div class="mock-hero-title"></div>
-                <div class="mock-hero-sub"></div>
-                <div class="mock-hero-btn">
-                  <div class="hotspot hotspot-hot" style="top: -12px; left: -12px;"></div>
-                </div>
-              </div>
-
-              <!-- Mock features -->
-              <div class="mock-features">
-                <div class="mock-feature">
-                  <div class="mock-feature-icon"></div>
-                  <div class="mock-feature-text"></div>
-                  <div class="hotspot hotspot-warm" style="top: 8px; right: 8px;"></div>
-                </div>
-                <div class="mock-feature">
-                  <div class="mock-feature-icon"></div>
-                  <div class="mock-feature-text"></div>
-                  <div class="hotspot hotspot-cool" style="top: 8px; right: 8px;"></div>
-                </div>
-                <div class="mock-feature">
-                  <div class="mock-feature-icon"></div>
-                  <div class="mock-feature-text"></div>
-                  <div class="hotspot hotspot-warm" style="top: 8px; right: 8px;"></div>
-                </div>
-              </div>
-
-              <!-- Mock CTA Section -->
-              <div class="mock-cta">
-                <div class="mock-cta-title"></div>
-                <div class="mock-cta-btn">
-                  <div class="hotspot hotspot-hot" style="top: -10px; left: -10px;"></div>
-                </div>
-              </div>
-
-              <!-- Mock footer -->
-              <div class="mock-footer">
-                <div class="mock-footer-links">
-                  <div class="mock-link-small"></div>
-                  <div class="mock-link-small"></div>
-                  <div class="mock-link-small">
-                    <div class="hotspot hotspot-cold" style="top: -4px; left: -4px;"></div>
-                  </div>
-                </div>
-              </div>
+              }
             </div>
           </div>
-
-          <!-- Legend -->
-          <div class="heatmap-legend">
-            <span class="legend-label">Cold</span>
-            <div class="legend-gradient"></div>
-            <span class="legend-label">Hot</span>
-          </div>
+          <p class="hint" *ngIf="!points().length && activeSite.site()">No heatmap data for this page in the selected range.</p>
         </section>
       }
 
-      <!-- Scroll Depth -->
       @if (activeTab() === 'scroll') {
         <section class="card heatmap-card animate-in" style="animation-delay: 150ms">
           <div class="chart-header">
             <div>
-              <h3 class="chart-title">Scroll Depth — /home</h3>
-              <p class="chart-subtitle">How far visitors scroll on this page</p>
+              <h3 class="chart-title">Scroll depth buckets</h3>
+              <p class="chart-subtitle">From average scroll depth per click cell</p>
             </div>
           </div>
-
-          <div class="scroll-viewport">
-            <div class="scroll-page">
-              <div class="scroll-section" *ngFor="let section of scrollSections" [style.background]="section.color">
-                <div class="scroll-label">
-                  <span class="scroll-depth">{{ section.depth }}%</span>
-                  <span class="scroll-visitors">{{ section.visitors | number }} visitors reached here</span>
-                </div>
+          <div class="scroll-buckets">
+            @for (b of scrollBuckets(); track b.depth) {
+              <div class="bucket" [style.flex]="b.weight || 1">
+                <span class="bucket-depth">{{ b.depth }}%</span>
+                <span class="bucket-count">{{ b.count }} pts</span>
               </div>
-            </div>
-
-            <!-- Markers -->
-            <div class="scroll-markers">
-              <div class="scroll-marker" *ngFor="let m of scrollMarkers" [style.top.%]="m.position">
-                <span class="marker-line"></span>
-                <span class="marker-label">{{ m.label }} — {{ m.visitors }}%</span>
-              </div>
-            </div>
+            }
           </div>
+          <p class="hint" *ngIf="!scrollBuckets().length && activeSite.site()">No scroll samples for this page.</p>
         </section>
       }
     </div>
   `,
   styles: [`
     .page-container { padding: 28px; max-width: 1440px; margin: 0 auto; }
+    .error-banner {
+      padding: 12px 16px;
+      border-radius: var(--radius-md);
+      font-size: 13px;
+      margin-bottom: 16px;
+      border: 1px solid rgb(var(--color-border));
+      background: rgba(248, 113, 113, 0.1);
+      color: rgb(248, 113, 113);
+    }
     .page-header { margin-bottom: 28px; }
     .page-title { font-size: 24px; font-weight: 700; color: rgb(var(--color-text-primary)); letter-spacing: -0.02em; }
     .page-subtitle { font-size: 14px; color: rgb(var(--color-text-muted)); margin-top: 4px; }
 
-    .heatmap-toggle { margin-bottom: 20px; }
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-end;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    .field-label { font-size: 12px; font-weight: 600; color: rgb(var(--color-text-muted)); display: block; margin-bottom: 6px; }
+    .page-select {
+      min-width: 280px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 1px solid rgb(var(--color-border));
+      background: rgb(var(--color-surface));
+      color: rgb(var(--color-text-primary));
+      font-size: 13px;
+    }
 
     .toggle-group {
       display: inline-flex;
       background: rgb(var(--color-surface));
       border: 1px solid rgb(var(--color-border));
-      border-radius: 8px; padding: 3px; gap: 2px;
+      border-radius: 8px;
+      padding: 3px;
+      gap: 2px;
     }
     .toggle-group button {
-      padding: 8px 18px; border-radius: 6px;
-      font-size: 13px; font-weight: 500;
+      padding: 8px 18px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
       color: rgb(var(--color-text-muted));
-      background: transparent; border: none; cursor: pointer;
-      transition: all 150ms ease; font-family: 'Inter', sans-serif;
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      font-family: 'Inter', sans-serif;
     }
-    .toggle-group button:hover { color: rgb(var(--color-text-secondary)); }
-    .toggle-group button.active { background: rgb(var(--color-accent)); color: white; box-shadow: 0 0 12px rgba(99, 102, 241, 0.25); }
+    .toggle-group button.active {
+      background: rgb(var(--color-accent));
+      color: white;
+      box-shadow: 0 0 12px rgba(99, 102, 241, 0.25);
+    }
 
     .heatmap-card { padding: 24px; }
-    .chart-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
+    .chart-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; flex-wrap: wrap; gap: 12px; }
     .chart-title { font-size: 16px; font-weight: 600; color: rgb(var(--color-text-primary)); }
     .chart-subtitle { font-size: 13px; color: rgb(var(--color-text-muted)); margin-top: 2px; }
 
@@ -179,164 +161,162 @@ import { CommonModule } from '@angular/common';
     .stat-value { font-size: 20px; font-weight: 700; color: rgb(var(--color-text-primary)); }
     .stat-label { font-size: 12px; color: rgb(var(--color-text-muted)); }
 
-    /* Mock Page */
     .heatmap-viewport {
       background: rgb(var(--color-surface-elevated));
       border: 1px solid rgb(var(--color-border));
       border-radius: var(--radius-md);
       overflow: hidden;
+    }
+    .heatmap-canvas {
       position: relative;
+      height: 420px;
+      background: linear-gradient(180deg, rgba(99,102,241,0.06), rgba(15,23,42,0.2));
     }
-
-    .mock-page { padding: 20px; min-height: 500px; }
-
-    .mock-nav {
-      display: flex; justify-content: space-between; align-items: center;
-      padding: 12px 0; margin-bottom: 40px;
-    }
-    .mock-logo { width: 100px; height: 24px; background: rgba(255,255,255,0.06); border-radius: 4px; }
-    .mock-nav-links { display: flex; gap: 16px; align-items: center; }
-    .mock-link { width: 50px; height: 10px; background: rgba(255,255,255,0.04); border-radius: 3px; }
-    .mock-link-cta {
-      width: 80px; height: 30px;
-      background: rgba(99, 102, 241, 0.15);
-      border-radius: 6px; position: relative;
-    }
-
-    .mock-hero { text-align: center; padding: 40px 0; }
-    .mock-hero-title { width: 60%; height: 28px; background: rgba(255,255,255,0.06); border-radius: 6px; margin: 0 auto 16px; }
-    .mock-hero-sub { width: 40%; height: 14px; background: rgba(255,255,255,0.03); border-radius: 4px; margin: 0 auto 28px; }
-    .mock-hero-btn {
-      width: 160px; height: 42px;
-      background: rgba(99, 102, 241, 0.2);
-      border-radius: 8px; margin: 0 auto; position: relative;
-    }
-
-    .mock-features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; padding: 40px 0; }
-    .mock-feature {
-      background: rgba(255,255,255,0.02);
-      border: 1px solid rgba(255,255,255,0.04);
-      border-radius: 12px; padding: 24px;
-      position: relative;
-    }
-    .mock-feature-icon { width: 40px; height: 40px; background: rgba(99, 102, 241, 0.1); border-radius: 10px; margin-bottom: 12px; }
-    .mock-feature-text { width: 80%; height: 10px; background: rgba(255,255,255,0.03); border-radius: 3px; }
-
-    .mock-cta { text-align: center; padding: 40px 0; }
-    .mock-cta-title { width: 50%; height: 20px; background: rgba(255,255,255,0.05); border-radius: 5px; margin: 0 auto 20px; }
-    .mock-cta-btn {
-      width: 140px; height: 38px;
-      background: rgba(52, 211, 153, 0.15);
-      border-radius: 8px; margin: 0 auto; position: relative;
-    }
-
-    .mock-footer { padding: 20px 0; border-top: 1px solid rgba(255,255,255,0.04); margin-top: 20px; }
-    .mock-footer-links { display: flex; gap: 20px; }
-    .mock-link-small { width: 60px; height: 8px; background: rgba(255,255,255,0.03); border-radius: 3px; position: relative; }
-
-    /* Hotspots */
-    .hotspot {
+    .heat-dot {
       position: absolute;
-      width: 50px; height: 50px;
+      width: 44px;
+      height: 44px;
+      margin-left: -22px;
+      margin-top: -22px;
       border-radius: 50%;
-      animation: pulse 2s infinite;
-      pointer-events: none;
+      background: radial-gradient(circle, rgba(248, 113, 113, 0.75) 0%, rgba(248, 113, 113, 0.15) 55%, transparent 70%);
+      pointer-events: auto;
     }
 
-    .hotspot-intense {
-      background: radial-gradient(circle, rgba(248, 113, 113, 0.6) 0%, rgba(248, 113, 113, 0.2) 40%, transparent 70%);
-      width: 60px; height: 60px;
+    .scroll-buckets {
+      display: flex;
+      gap: 4px;
+      min-height: 120px;
+      align-items: stretch;
     }
-
-    .hotspot-hot {
-      background: radial-gradient(circle, rgba(251, 191, 36, 0.5) 0%, rgba(248, 113, 113, 0.3) 40%, transparent 70%);
-      width: 70px; height: 70px;
-    }
-
-    .hotspot-warm {
-      background: radial-gradient(circle, rgba(251, 191, 36, 0.4) 0%, rgba(251, 191, 36, 0.15) 40%, transparent 70%);
-      width: 45px; height: 45px;
-    }
-
-    .hotspot-cool {
-      background: radial-gradient(circle, rgba(96, 165, 250, 0.3) 0%, rgba(96, 165, 250, 0.1) 40%, transparent 70%);
-      width: 40px; height: 40px;
-    }
-
-    .hotspot-cold {
-      background: radial-gradient(circle, rgba(96, 165, 250, 0.2) 0%, transparent 60%);
-      width: 30px; height: 30px;
-    }
-
-    @keyframes pulse {
-      0%, 100% { transform: scale(1); opacity: 1; }
-      50% { transform: scale(1.15); opacity: 0.8; }
-    }
-
-    /* Legend */
-    .heatmap-legend {
-      display: flex; align-items: center; gap: 12px;
-      justify-content: center; margin-top: 20px;
-    }
-    .legend-label { font-size: 12px; color: rgb(var(--color-text-muted)); }
-    .legend-gradient {
-      width: 200px; height: 8px;
-      border-radius: 4px;
-      background: linear-gradient(90deg, rgb(96, 165, 250), rgb(52, 211, 153), rgb(251, 191, 36), rgb(248, 113, 113));
-    }
-
-    /* Scroll Depth */
-    .scroll-viewport {
-      position: relative;
-      border: 1px solid rgb(var(--color-border));
-      border-radius: var(--radius-md);
-      overflow: hidden;
-    }
-
-    .scroll-page { display: flex; flex-direction: column; }
-
-    .scroll-section {
-      padding: 32px 24px;
-      display: flex; align-items: center;
+    .bucket {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
       justify-content: center;
-      transition: all var(--transition-base);
+      gap: 4px;
+      padding: 12px 8px;
+      border-radius: 8px;
+      background: rgba(99, 102, 241, 0.12);
+      border: 1px solid rgb(var(--color-border));
+      min-width: 48px;
     }
-    .scroll-section:hover { filter: brightness(1.2); }
+    .bucket-depth { font-size: 14px; font-weight: 700; color: rgb(var(--color-text-primary)); }
+    .bucket-count { font-size: 11px; color: rgb(var(--color-text-muted)); }
 
-    .scroll-label { display: flex; flex-direction: column; align-items: center; gap: 4px; }
-    .scroll-depth { font-size: 22px; font-weight: 700; color: white; text-shadow: 0 1px 4px rgba(0,0,0,0.5); }
-    .scroll-visitors { font-size: 12px; color: rgba(255,255,255,0.8); }
-
-    .scroll-markers { position: absolute; right: 0; top: 0; bottom: 0; width: 200px; }
-    .scroll-marker {
-      position: absolute; right: 0; display: flex; align-items: center; gap: 8px;
-    }
-    .marker-line { width: 20px; height: 2px; background: rgba(255,255,255,0.3); }
-    .marker-label { font-size: 11px; color: rgb(var(--color-text-muted)); white-space: nowrap; }
+    .hint { font-size: 13px; color: rgb(var(--color-text-muted)); margin-top: 12px; }
 
     @media (max-width: 768px) {
       .page-container { padding: 16px; }
-      .mock-features { grid-template-columns: 1fr; }
       .heatmap-stats { gap: 16px; }
     }
   `]
 })
 export class HeatmapsComponent {
+  readonly activeSite = inject(ActiveSiteService);
+  private readonly injector = inject(Injector);
+  private readonly destroyRef = inject(DestroyRef);
+  private readonly api = inject(TrafficApiService);
+
   activeTab = signal<'click' | 'scroll'>('click');
+  pageOptions = signal<string[]>(['/']);
+  selectedPageUrl = '/';
+  points = signal<{ xPct: number; yPct: number; opacity: number; count: number }[]>([]);
+  scrollBuckets = signal<{ depth: number; count: number; weight: number }[]>([]);
+  totalClicks = signal(0);
+  loadError = signal('');
 
-  scrollSections = [
-    { depth: 0, visitors: 24853, color: 'rgba(52, 211, 153, 0.3)' },
-    { depth: 25, visitors: 19882, color: 'rgba(52, 211, 153, 0.22)' },
-    { depth: 50, visitors: 14912, color: 'rgba(251, 191, 36, 0.2)' },
-    { depth: 75, visitors: 7456, color: 'rgba(248, 113, 113, 0.18)' },
-    { depth: 100, visitors: 2486, color: 'rgba(248, 113, 113, 0.12)' },
-  ];
+  constructor() {
+    toObservable(this.activeSite.site, { injector: this.injector })
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        switchMap(site => {
+          if (!site) {
+            this.loadError.set('');
+            this.pageOptions.set(['/']);
+            this.selectedPageUrl = '/';
+            this.applyPoints([]);
+            return of({ ok: true as const, rows: [] as PagePointDto[] });
+          }
+          return this.api.pages(site.siteId, 30).pipe(
+            map(rows => ({ ok: true as const, rows })),
+            catchError(err => of({ ok: false as const, err, rows: [] as PagePointDto[] })),
+          );
+        })
+      )
+      .subscribe(result => {
+        if (result.ok) this.loadError.set('');
+        else this.loadError.set(httpErrorMessage(result.err));
+        const pages = result.rows;
+        const urls = pages.map(p => p.pageUrl).filter(Boolean);
+        const list = urls.length ? urls : ['/'];
+        this.pageOptions.set(list);
+        if (!list.includes(this.selectedPageUrl)) {
+          this.selectedPageUrl = list[0];
+        }
+        this.loadHeatmap();
+      });
+  }
 
-  scrollMarkers = [
-    { position: 0, label: 'Above fold', visitors: 100 },
-    { position: 25, label: 'Features', visitors: 80 },
-    { position: 50, label: 'Pricing', visitors: 60 },
-    { position: 75, label: 'Testimonials', visitors: 30 },
-    { position: 95, label: 'Footer', visitors: 10 },
-  ];
+  onPageChange() {
+    this.loadHeatmap();
+  }
+
+  loadHeatmap() {
+    const site = this.activeSite.site();
+    if (!site) {
+      this.applyPoints([]);
+      return;
+    }
+    const days = timeRangeToDays('30d');
+    const url = this.selectedPageUrl;
+    this.api
+      .heatmap(site.siteId, url, days)
+      .pipe(
+        map(rows => ({ ok: true as const, rows })),
+        catchError(err => of({ ok: false as const, err, rows: [] as HeatmapPointDto[] })),
+      )
+      .subscribe(result => {
+        if (result.ok) this.loadError.set('');
+        else this.loadError.set(httpErrorMessage(result.err));
+        this.applyPoints(result.rows);
+      });
+  }
+
+  private applyPoints(rows: HeatmapPointDto[]) {
+    if (!rows.length) {
+      this.points.set([]);
+      this.scrollBuckets.set([]);
+      this.totalClicks.set(0);
+      return;
+    }
+    const maxX = Math.max(...rows.map(r => r.x), 1);
+    const maxY = Math.max(...rows.map(r => r.y), 1);
+    const maxC = Math.max(...rows.map(r => r.count), 1);
+    const total = rows.reduce((s, r) => s + r.count, 0);
+    this.totalClicks.set(total);
+    this.points.set(
+      rows.map(r => ({
+        xPct: (r.x / maxX) * 100,
+        yPct: (r.y / maxY) * 100,
+        opacity: 0.25 + (r.count / maxC) * 0.75,
+        count: r.count,
+      }))
+    );
+
+    const buckets = new Map<number, number>();
+    for (const r of rows) {
+      const d = Math.min(100, Math.round(r.avgScrollDepth / 10) * 10);
+      buckets.set(d, (buckets.get(d) ?? 0) + r.count);
+    }
+    const sorted = [...buckets.entries()].sort((a, b) => a[0] - b[0]);
+    const maxB = Math.max(...sorted.map(([, c]) => c), 1);
+    this.scrollBuckets.set(
+      sorted.map(([depth, count]) => ({
+        depth,
+        count,
+        weight: Math.max(1, Math.round((count / maxB) * 8)),
+      }))
+    );
+  }
 }

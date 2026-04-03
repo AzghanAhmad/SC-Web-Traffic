@@ -1,7 +1,10 @@
-import { Component, signal } from '@angular/core';
-import { RouterOutlet } from '@angular/router';
+import { Component, OnInit, inject, signal } from '@angular/core';
+import { Router, RouterOutlet } from '@angular/router';
+import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { SidebarComponent } from '../sidebar/sidebar.component';
 import { TopBarComponent } from '../top-bar/top-bar.component';
+import { ActiveSiteService } from '../../services/active-site.service';
+import { AuthService } from '../../services/auth.service';
 
 @Component({
   selector: 'app-dashboard-layout',
@@ -67,8 +70,32 @@ import { TopBarComponent } from '../top-bar/top-bar.component';
     }
   `]
 })
-export class DashboardLayoutComponent {
+export class DashboardLayoutComponent implements OnInit {
+  private readonly activeSite = inject(ActiveSiteService);
+  private readonly http = inject(HttpClient);
+  private readonly auth = inject(AuthService);
+  private readonly router = inject(Router);
   sidebarCollapsed = signal(false);
+
+  ngOnInit(): void {
+    // Load sites immediately so the overview child does not wait on /Auth/me finishing first.
+    if (this.auth.isAuthenticated()) {
+      this.activeSite.refresh();
+    }
+    this.http.get<{ email: string; displayName: string }>('/api/Auth/me').subscribe({
+      next: () => this.activeSite.refresh(),
+      error: err => {
+        const status = err instanceof HttpErrorResponse ? err.status : 0;
+        if (status === 401 || status === 403) {
+          this.activeSite.clear();
+          this.auth.clearSession();
+          void this.router.navigate(['/login']);
+          return;
+        }
+        this.activeSite.refresh();
+      },
+    });
+  }
 
   onSidebarCollapse(collapsed: boolean) {
     this.sidebarCollapsed.set(collapsed);

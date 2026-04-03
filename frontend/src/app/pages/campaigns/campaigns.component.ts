@@ -1,6 +1,12 @@
-import { Component, OnInit, ViewChild, ElementRef, AfterViewInit } from '@angular/core';
+import { Component, DestroyRef, Injector, ViewChild, ElementRef, AfterViewInit, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { MockDataService, Campaign } from '../../services/mock-data.service';
+import { toObservable, takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { of } from 'rxjs';
+import { catchError, map, switchMap } from 'rxjs/operators';
+import type { Campaign, CampaignPointDto } from '../../models/analytics.types';
+import { ActiveSiteService } from '../../services/active-site.service';
+import { TrafficApiService } from '../../services/traffic-api.service';
+import { httpErrorMessage } from '../../utils/analytics.helpers';
 import { Chart, registerables } from 'chart.js';
 
 Chart.register(...registerables);
@@ -11,8 +17,11 @@ Chart.register(...registerables);
   imports: [CommonModule],
   template: `
     <div class="page-container">
+      @if (loadError()) {
+        <div class="error-banner">{{ loadError() }}</div>
+      }
       <div class="page-header animate-in">
-        <h1 class="page-title">📢 Sources & Campaigns</h1>
+        <h1 class="page-title">Sources & Campaigns</h1>
         <p class="page-subtitle">Track and compare your campaign performance</p>
       </div>
 
@@ -44,9 +53,7 @@ Chart.register(...registerables);
                 <th>Campaign</th>
                 <th>Status</th>
                 <th>Visits</th>
-                <th>Engagement</th>
                 <th>Conversions</th>
-                <th>Revenue</th>
               </tr>
             </thead>
             <tbody>
@@ -54,14 +61,10 @@ Chart.register(...registerables);
                 <tr>
                   <td class="campaign-name">{{ campaign.name }}</td>
                   <td>
-                    <span class="status-badge" [class]="'status-' + campaign.status">
-                      {{ campaign.status }}
-                    </span>
+                    <span class="status-badge status-active">active</span>
                   </td>
                   <td class="td-bold">{{ campaign.visits | number }}</td>
-                  <td>{{ campaign.engagement }}</td>
                   <td class="td-bold">{{ campaign.conversions | number }}</td>
-                  <td class="td-revenue">\${{ campaign.revenue | number }}</td>
                 </tr>
               }
             </tbody>
@@ -72,6 +75,15 @@ Chart.register(...registerables);
   `,
   styles: [`
     .page-container { padding: 28px; max-width: 1440px; margin: 0 auto; }
+    .error-banner {
+      padding: 12px 16px;
+      border-radius: var(--radius-md);
+      font-size: 13px;
+      margin-bottom: 16px;
+      border: 1px solid rgb(var(--color-border));
+      background: rgba(248, 113, 113, 0.1);
+      color: rgb(248, 113, 113);
+    }
     .page-header { margin-bottom: 28px; }
     .page-title { font-size: 24px; font-weight: 700; color: rgb(var(--color-text-primary)); letter-spacing: -0.02em; }
     .page-subtitle { font-size: 14px; color: rgb(var(--color-text-muted)); margin-top: 4px; }
@@ -87,8 +99,6 @@ Chart.register(...registerables);
 
     .campaign-name { font-weight: 600; color: rgb(var(--color-text-primary)) !important; }
     .td-bold { font-weight: 600; color: rgb(var(--color-text-primary)) !important; }
-    .td-revenue { font-weight: 700; color: rgb(52, 211, 153) !important; }
-
     .status-badge {
       padding: 4px 10px; border-radius: 9999px;
       font-size: 11px; font-weight: 600;
@@ -101,26 +111,67 @@ Chart.register(...registerables);
     @media (max-width: 768px) { .page-container { padding: 16px; } }
   `]
 })
-export class CampaignsComponent implements OnInit, AfterViewInit {
+export class CampaignsComponent implements AfterViewInit {
   @ViewChild('campaignChart') campaignChartRef!: ElementRef<HTMLCanvasElement>;
 
+  private readonly injector = inject(Injector);
+  private readonly destroyRef = inject(DestroyRef);
+  private readonly activeSite = inject(ActiveSiteService);
+  private readonly api = inject(TrafficApiService);
+
   campaigns: Campaign[] = [];
+  loadError = signal('');
+  private campaignChart: Chart | null = null;
 
-  constructor(private dataService: MockDataService) {}
-
-  ngOnInit() {
-    this.campaigns = this.dataService.getCampaigns();
+  constructor() {
+    toObservable(this.activeSite.site, { injector: this.injector })
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        switchMap(site => {
+          if (!site) {
+            this.loadError.set('');
+            return of({ ok: true as const, rows: [] as CampaignPointDto[] });
+          }
+          return this.api.campaigns(site.siteId, 30).pipe(
+            map(rows => ({ ok: true as const, rows })),
+            catchError(err => of({ ok: false as const, err, rows: [] as CampaignPointDto[] })),
+          );
+        })
+      )
+      .subscribe(result => {
+        if (result.ok) this.loadError.set('');
+        else this.loadError.set(httpErrorMessage(result.err));
+        const rows = result.rows;
+        this.campaigns = rows.map(r => ({
+          name: r.name,
+          visits: r.visits,
+          engagement: '—',
+          conversions: r.conversions,
+          revenue: 0,
+          status: 'active',
+        }));
+        queueMicrotask(() => this.syncChart());
+      });
   }
 
   ngAfterViewInit() {
-    setTimeout(() => this.createChart(), 300);
+    setTimeout(() => this.syncChart(), 300);
+  }
+
+  private syncChart() {
+    const canvas = this.campaignChartRef?.nativeElement;
+    if (!canvas) return;
+    Chart.getChart(canvas)?.destroy();
+    this.campaignChart = null;
+    if (!this.campaigns.length) return;
+    this.createChart();
   }
 
   private createChart() {
     const ctx = this.campaignChartRef?.nativeElement?.getContext('2d');
     if (!ctx) return;
 
-    new Chart(ctx, {
+    this.campaignChart = new Chart(ctx, {
       type: 'bar',
       data: {
         labels: this.campaigns.map(c => c.name),

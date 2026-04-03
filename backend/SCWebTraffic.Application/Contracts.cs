@@ -14,15 +14,24 @@ public sealed record CollectEventRequest(
     DateTime? Timestamp);
 
 public sealed record AuthRequest(string Email, string Password);
+public sealed record SignupRequest(string Email, string Password, string? DisplayName);
 public sealed record AuthResponse(string AccessToken, DateTime ExpiresAtUtc);
+public sealed record AuthResultDto(string AccessToken, DateTime ExpiresAtUtc, Guid UserId, string Email, string DisplayName);
+public sealed record UserProfileDto(string Email, string DisplayName);
+
+public sealed record SiteDto(Guid SiteId, string Domain, string Name);
+public sealed record RegisterSiteRequest(string Url);
 
 public sealed record EventCollectionResult(Guid EventId, Guid SessionId, Guid VisitorId);
 
-public sealed record TrendPoint(string Date, int Visitors, int Sessions, int Conversions);
+public sealed record TrendPoint(string Date, int Visitors, int Sessions, int PageViews, int Conversions);
 public sealed record SourcePoint(string Source, int Sessions, double Percentage);
 public sealed record PagePoint(string PageUrl, int Views, double AvgTimeOnPageSeconds);
 public sealed record DevicePoint(string DeviceType, int Sessions);
 public sealed record ConversionPoint(string Type, int Count, decimal? ValueSum);
+public sealed record CountryPoint(string Country, int Sessions, double Percentage);
+public sealed record ReferrerPoint(string Source, int Visits);
+public sealed record CampaignPoint(string Name, int Visits, int Conversions);
 public sealed record FunnelStepDto(string Step, int Entered, int Completed, double ConversionRate, double DropOffRate);
 public sealed record HeatmapPointDto(int X, int Y, int Count, int AvgScrollDepth);
 
@@ -67,6 +76,9 @@ public interface IAnalyticsService
     Task<IReadOnlyList<PagePoint>> GetPagesAsync(Guid siteId, int days, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<ConversionPoint>> GetConversionsAsync(Guid siteId, int days, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<DevicePoint>> GetDevicesAsync(Guid siteId, int days, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<CountryPoint>> GetCountriesAsync(Guid siteId, int days, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<ReferrerPoint>> GetReferrersAsync(Guid siteId, int days, int take = 20, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<CampaignPoint>> GetCampaignsAsync(Guid siteId, int days, CancellationToken cancellationToken = default);
 }
 
 public interface IFunnelService
@@ -137,6 +149,7 @@ public sealed class ApplicationMappingProfile : Profile
             .ForCtorParam(nameof(TrendPoint.Date), opt => opt.MapFrom(x => x.Timestamp.ToString("yyyy-MM-dd")))
             .ForCtorParam(nameof(TrendPoint.Visitors), opt => opt.MapFrom(_ => 0))
             .ForCtorParam(nameof(TrendPoint.Sessions), opt => opt.MapFrom(_ => 0))
+            .ForCtorParam(nameof(TrendPoint.PageViews), opt => opt.MapFrom(_ => 0))
             .ForCtorParam(nameof(TrendPoint.Conversions), opt => opt.MapFrom(_ => 0));
     }
 }

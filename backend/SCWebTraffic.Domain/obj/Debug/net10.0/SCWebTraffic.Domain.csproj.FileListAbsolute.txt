@@ -9,3 +9,4 @@ E:\Projects\Project 3 (B)\project\backend\SCWebTraffic.Domain\obj\Debug\net10.0\
 E:\Projects\Project 3 (B)\project\backend\SCWebTraffic.Domain\obj\Debug\net10.0\refint\SCWebTraffic.Domain.dll
 E:\Projects\Project 3 (B)\project\backend\SCWebTraffic.Domain\obj\Debug\net10.0\SCWebTraffic.Domain.pdb
 E:\Projects\Project 3 (B)\project\backend\SCWebTraffic.Domain\obj\Debug\net10.0\ref\SCWebTraffic.Domain.dll
+E:\Projects\Project 3 (B)\project\backend\SCWebTraffic.Domain\obj\Debug\net10.0\SCWebTraffic.Domain.sourcelink.json

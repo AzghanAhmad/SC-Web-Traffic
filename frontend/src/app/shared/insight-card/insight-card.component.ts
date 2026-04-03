@@ -1,14 +1,15 @@
 import { Component, Input } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { Insight } from '../../services/mock-data.service';
+import type { Insight } from '../../models/analytics.types';
+import { OutlineIconComponent } from '../outline-icon/outline-icon.component';
 
 @Component({
   selector: 'app-insight-card',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, OutlineIconComponent],
   template: `
     <div class="insight-card" [class]="'insight-card--' + insight.type">
-      <span class="insight-icon">{{ insight.icon }}</span>
+      <span class="insight-icon"><app-outline-icon [name]="insight.icon" size="lg"></app-outline-icon></span>
       <div class="insight-content">
         <span class="insight-text">{{ insight.text }} </span>
         <span class="insight-highlight">{{ insight.highlight }}</span>
@@ -53,10 +54,10 @@ import { Insight } from '../../services/mock-data.service';
     .insight-card--info .insight-indicator { background: rgb(96, 165, 250); }
 
     .insight-icon {
-      font-size: 22px;
-      line-height: 1;
+      display: inline-flex;
       flex-shrink: 0;
       margin-top: 1px;
+      color: rgb(var(--color-text-muted));
     }
 
     .insight-content {

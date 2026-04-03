@@ -1,6 +1,7 @@
-import { Component, signal, Output, EventEmitter } from '@angular/core';
+import { Component, signal, Output, EventEmitter, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { RouterModule } from '@angular/router';
+import { Router, RouterModule } from '@angular/router';
+import { AuthService } from '../../services/auth.service';
 
 interface NavItem {
   label: string;
@@ -22,7 +23,67 @@ interface NavItem {
              [routerLink]="item.route"
              routerLinkActive="active"
              [routerLinkActiveOptions]="{ exact: item.route === '/' }">
-            <span class="nav-icon">{{ item.icon }}</span>
+            <span class="nav-icon" [ngSwitch]="item.icon">
+              <svg *ngSwitchCase="'home'" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M3 10.5 12 3l9 7.5"></path>
+                <path d="M5 9.8V21h14V9.8"></path>
+              </svg>
+              <svg *ngSwitchCase="'chart'" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4 20h16"></path>
+                <path d="M7 16V9"></path>
+                <path d="M12 16V5"></path>
+                <path d="M17 16v-3"></path>
+              </svg>
+              <svg *ngSwitchCase="'conversion'" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4 6h9"></path>
+                <path d="m10 3 3 3-3 3"></path>
+                <path d="M20 18h-9"></path>
+                <path d="m14 15-3 3 3 3"></path>
+              </svg>
+              <svg *ngSwitchCase="'funnels'" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M3 5h18"></path>
+                <path d="M6 10h12"></path>
+                <path d="M9 15h6"></path>
+                <path d="M11 19h2"></path>
+              </svg>
+              <svg *ngSwitchCase="'heatmap'" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 12m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"></path>
+                <path d="M12 3v2"></path>
+                <path d="M12 19v2"></path>
+                <path d="M3 12h2"></path>
+                <path d="M19 12h2"></path>
+                <path d="m5.6 5.6 1.4 1.4"></path>
+                <path d="m17 17 1.4 1.4"></path>
+                <path d="m18.4 5.6-1.4 1.4"></path>
+                <path d="m7 17-1.4 1.4"></path>
+              </svg>
+              <svg *ngSwitchCase="'pages'" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4 4h16v16H4z"></path>
+                <path d="M8 9h8"></path>
+                <path d="M8 13h8"></path>
+                <path d="M8 17h5"></path>
+              </svg>
+              <svg *ngSwitchCase="'campaigns'" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4 12h2l2-6 4 12 2-6h6"></path>
+              </svg>
+              <svg *ngSwitchCase="'devices'" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M3 6h13v11H3z"></path>
+                <path d="M18 9h3v8h-3z"></path>
+                <path d="M8 20h3"></path>
+              </svg>
+              <svg *ngSwitchCase="'settings'" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"></path>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+              </svg>
+              <svg *ngSwitchDefault viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 8v8"></path>
+                <path d="M8 12h8"></path>
+                <path d="M12 3.5v2"></path>
+                <path d="M12 18.5v2"></path>
+                <path d="M3.5 12h2"></path>
+                <path d="M18.5 12h2"></path>
+              </svg>
+            </span>
             <span class="nav-label" *ngIf="!collapsed()">{{ item.label }}</span>
             <div class="nav-active-indicator"></div>
           </a>
@@ -32,14 +93,14 @@ interface NavItem {
       <div class="sidebar-divider"></div>
 
       <div class="sidebar-user" *ngIf="!collapsed()">
-        <div class="profile-avatar">FN</div>
+        <div class="profile-avatar">{{ auth.initials() }}</div>
         <div class="profile-meta">
-          <div class="profile-name">Fast Nuces</div>
-          <div class="profile-email">fastnuces22@gmail.com</div>
+          <div class="profile-name">{{ auth.displayName() }}</div>
+          <div class="profile-email" *ngIf="auth.email()">{{ auth.email() }}</div>
         </div>
       </div>
 
-      <button class="logout-btn" *ngIf="!collapsed()" type="button">⤴ Logout</button>
+      <button class="logout-btn" *ngIf="!collapsed()" type="button" (click)="logout()">Logout</button>
 
       <button class="collapse-btn" (click)="toggleCollapse()" [attr.aria-label]="collapsed() ? 'Expand sidebar' : 'Collapse sidebar'">
         <span>{{ collapsed() ? '→' : '←' }}</span>
@@ -129,11 +190,24 @@ interface NavItem {
     }
 
     .nav-icon {
-      font-size: 18px;
-      line-height: 1;
       flex-shrink: 0;
       width: 24px;
+      height: 24px;
       text-align: center;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .nav-icon svg {
+      width: 20px;
+      height: 20px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.8;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      opacity: 0.92;
     }
 
     .nav-label {
@@ -239,21 +313,28 @@ interface NavItem {
 export class SidebarComponent {
   collapsed = signal(false);
   @Output() collapsedChange = new EventEmitter<boolean>();
+  readonly auth = inject(AuthService);
+  private readonly router = inject(Router);
 
   navItems: NavItem[] = [
-    { label: 'Overview', icon: '🏠', route: '/' },
-    { label: 'Traffic Analytics', icon: '📈', route: '/traffic' },
-    { label: 'Conversions', icon: '💰', route: '/conversions' },
-    { label: 'Funnels', icon: '🔁', route: '/funnels' },
-    { label: 'Heatmaps', icon: '🔥', route: '/heatmaps' },
-    { label: 'Pages Performance', icon: '📄', route: '/pages' },
-    { label: 'Sources & Campaigns', icon: '📢', route: '/campaigns' },
-    { label: 'Device Insights', icon: '📱', route: '/devices' },
-    { label: 'Settings', icon: '⚙️', route: '/settings' },
+    { label: 'Overview', icon: 'home', route: '/' },
+    { label: 'Traffic Analytics', icon: 'chart', route: '/traffic' },
+    { label: 'Conversions', icon: 'conversion', route: '/conversions' },
+    { label: 'Funnels', icon: 'funnels', route: '/funnels' },
+    { label: 'Heatmaps', icon: 'heatmap', route: '/heatmaps' },
+    { label: 'Pages Performance', icon: 'pages', route: '/pages' },
+    { label: 'Sources & Campaigns', icon: 'campaigns', route: '/campaigns' },
+    { label: 'Device Insights', icon: 'devices', route: '/devices' },
+    { label: 'Settings', icon: 'settings', route: '/settings' },
   ];
 
   toggleCollapse() {
     this.collapsed.update(v => !v);
     this.collapsedChange.emit(this.collapsed());
+  }
+
+  logout(): void {
+    this.auth.clearSession();
+    void this.router.navigate(['/login']);
   }
 }

@@ -1,14 +1,18 @@
 import { Routes } from '@angular/router';
+import { authGuard } from './guards/auth.guard';
+import { guestGuard } from './guards/guest.guard';
 
 export const routes: Routes = [
   // Auth pages (no sidebar/topbar)
   {
     path: 'login',
+    canActivate: [guestGuard],
     loadComponent: () =>
       import('./pages/login/login.component').then(m => m.LoginComponent),
   },
   {
     path: 'signup',
+    canActivate: [guestGuard],
     loadComponent: () =>
       import('./pages/signup/signup.component').then(m => m.SignupComponent),
   },
@@ -16,6 +20,7 @@ export const routes: Routes = [
   // Dashboard pages (with sidebar/topbar)
   {
     path: '',
+    canActivate: [authGuard],
     loadComponent: () =>
       import('./layout/dashboard-layout/dashboard-layout.component').then(m => m.DashboardLayoutComponent),
     children: [

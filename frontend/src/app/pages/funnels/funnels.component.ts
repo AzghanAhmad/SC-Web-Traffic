@@ -1,5 +1,13 @@
-import { Component, signal } from '@angular/core';
+import { Component, DestroyRef, Injector, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { toObservable, takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { of } from 'rxjs';
+import { catchError, map, switchMap } from 'rxjs/operators';
+import { OutlineIconComponent } from '../../shared/outline-icon/outline-icon.component';
+import { ActiveSiteService } from '../../services/active-site.service';
+import { TrafficApiService } from '../../services/traffic-api.service';
+import { httpErrorMessage, timeRangeToDays } from '../../utils/analytics.helpers';
+import type { FunnelStepDto, PagePointDto } from '../../models/analytics.types';
 
 interface FunnelBuilderStep {
   id: number;
@@ -12,15 +20,17 @@ interface FunnelBuilderStep {
 @Component({
   selector: 'app-funnels',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, OutlineIconComponent],
   template: `
     <div class="page-container">
+      @if (loadError()) {
+        <div class="error-banner">{{ loadError() }}</div>
+      }
       <div class="page-header animate-in">
-        <h1 class="page-title">🔁 Funnel Analysis</h1>
+        <h1 class="page-title">Funnel Analysis</h1>
         <p class="page-subtitle">Build custom funnels and analyze user journeys</p>
       </div>
 
-      <!-- Funnel Builder -->
       <section class="card builder-section animate-in" style="animation-delay: 100ms">
         <div class="builder-header">
           <div>
@@ -28,22 +38,23 @@ interface FunnelBuilderStep {
             <p class="chart-subtitle">Select pages to define your funnel steps</p>
           </div>
           <div class="builder-actions">
-            <button class="btn btn-outline" (click)="resetFunnel()">Reset</button>
-            <button class="btn btn-primary" (click)="analyzeFunnel()">Analyze</button>
+            <button class="btn btn-outline" type="button" (click)="resetFunnel()">Reset</button>
+            <button class="btn btn-primary" type="button" (click)="analyzeFunnel()">Analyze</button>
           </div>
         </div>
 
-        <!-- Step selector -->
         <div class="steps-builder">
           @for (step of selectedSteps(); track step.id; let i = $index; let last = $last) {
             <div class="step-item">
               <div class="step-number">{{ i + 1 }}</div>
               <select class="step-select" [value]="step.page" (change)="updateStep(i, $event)">
-                @for (page of availablePages; track page) {
+                @for (page of availablePages(); track page) {
                   <option [value]="page">{{ page }}</option>
                 }
               </select>
-              <button class="step-remove" *ngIf="selectedSteps().length > 2" (click)="removeStep(i)">✕</button>
+              <button class="step-remove" type="button" *ngIf="selectedSteps().length > 2" (click)="removeStep(i)" aria-label="Remove step">
+                <app-outline-icon name="x" size="sm"></app-outline-icon>
+              </button>
             </div>
             @if (!last) {
               <div class="step-connector">
@@ -53,13 +64,12 @@ interface FunnelBuilderStep {
               </div>
             }
           }
-          <button class="add-step-btn" *ngIf="selectedSteps().length < 6" (click)="addStep()">
+          <button class="add-step-btn" type="button" *ngIf="selectedSteps().length < 6" (click)="addStep()">
             <span>+</span> Add Step
           </button>
         </div>
       </section>
 
-      <!-- Analysis Results -->
       @if (analyzed()) {
         <section class="card results-section animate-in" style="animation-delay: 200ms">
           <div class="chart-header">
@@ -74,7 +84,7 @@ interface FunnelBuilderStep {
           </div>
 
           <div class="results-flow">
-            @for (step of funnelResults(); track step.id; let i = $index; let first = $first; let last = $last) {
+            @for (step of funnelResults(); track step.id; let i = $index; let last = $last) {
               <div class="result-step">
                 <div class="result-bar-track">
                   <div class="result-bar" [style.width.%]="step.conversion" [style.animation-delay]="(i * 120) + 'ms'">
@@ -106,6 +116,15 @@ interface FunnelBuilderStep {
   `,
   styles: [`
     .page-container { padding: 28px; max-width: 1440px; margin: 0 auto; }
+    .error-banner {
+      padding: 12px 16px;
+      border-radius: var(--radius-md);
+      font-size: 13px;
+      margin-bottom: 16px;
+      border: 1px solid rgb(var(--color-border));
+      background: rgba(248, 113, 113, 0.1);
+      color: rgb(248, 113, 113);
+    }
     .page-header { margin-bottom: 28px; }
     .page-title { font-size: 24px; font-weight: 700; color: rgb(var(--color-text-primary)); letter-spacing: -0.02em; }
     .page-subtitle { font-size: 14px; color: rgb(var(--color-text-muted)); margin-top: 4px; }
@@ -153,9 +172,11 @@ interface FunnelBuilderStep {
     .step-select option { background: rgb(var(--color-surface)); }
 
     .step-remove {
+      display: inline-flex;
+      align-items: center; justify-content: center;
       background: none; border: none;
       color: rgb(var(--color-text-muted));
-      cursor: pointer; font-size: 16px;
+      cursor: pointer;
       padding: 4px 8px; border-radius: 6px;
       transition: all var(--transition-fast);
     }
@@ -183,7 +204,6 @@ interface FunnelBuilderStep {
     }
     .add-step-btn span { font-size: 18px; }
 
-    /* Results */
     .results-section { padding: 24px; }
 
     .overall-rate {
@@ -256,23 +276,62 @@ interface FunnelBuilderStep {
   `]
 })
 export class FunnelsComponent {
-  availablePages = ['/home', '/books', '/pricing', '/product', '/cart', '/checkout', '/thank-you', '/blog', '/about'];
+  private readonly injector = inject(Injector);
+  private readonly destroyRef = inject(DestroyRef);
+  private readonly activeSite = inject(ActiveSiteService);
+  private readonly api = inject(TrafficApiService);
 
+  availablePages = signal<string[]>(['/']);
   selectedSteps = signal<FunnelBuilderStep[]>([
-    { id: 1, page: '/home', visitors: 0, conversion: 0, dropOff: 0 },
-    { id: 2, page: '/books', visitors: 0, conversion: 0, dropOff: 0 },
-    { id: 3, page: '/pricing', visitors: 0, conversion: 0, dropOff: 0 },
-    { id: 4, page: '/checkout', visitors: 0, conversion: 0, dropOff: 0 },
+    { id: 1, page: '/', visitors: 0, conversion: 0, dropOff: 0 },
+    { id: 2, page: '/', visitors: 0, conversion: 0, dropOff: 0 },
   ]);
 
   analyzed = signal(false);
   funnelResults = signal<FunnelBuilderStep[]>([]);
   overallConversion = signal('0');
+  loadError = signal('');
+  private siteId: string | null = null;
+
+  constructor() {
+    toObservable(this.activeSite.site, { injector: this.injector })
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        switchMap(site => {
+          this.siteId = site?.siteId ?? null;
+          this.analyzed.set(false);
+          if (!site) {
+            this.loadError.set('');
+            this.availablePages.set(['/']);
+            return of({ ok: true as const, rows: [] as PagePointDto[] });
+          }
+          return this.api.pages(site.siteId, 30).pipe(
+            map(rows => ({ ok: true as const, rows })),
+            catchError(err => of({ ok: false as const, err, rows: [] as PagePointDto[] })),
+          );
+        })
+      )
+      .subscribe(result => {
+        if (result.ok) this.loadError.set('');
+        else this.loadError.set(httpErrorMessage(result.err));
+        const pages = result.rows;
+        const urls = pages.map(p => p.pageUrl).filter(Boolean);
+        const list = urls.length ? urls : ['/'];
+        this.availablePages.set(list);
+        const first = list[0];
+        const second = list[1] ?? list[0];
+        this.selectedSteps.set([
+          { id: 1, page: first, visitors: 0, conversion: 0, dropOff: 0 },
+          { id: 2, page: second, visitors: 0, conversion: 0, dropOff: 0 },
+        ]);
+      });
+  }
 
   addStep() {
     const steps = [...this.selectedSteps()];
-    const usedPages = new Set(steps.map(s => s.page));
-    const nextPage = this.availablePages.find(p => !usedPages.has(p)) || '/home';
+    const pages = this.availablePages();
+    const used = new Set(steps.map(s => s.page));
+    const nextPage = pages.find(p => !used.has(p)) ?? pages[0];
     steps.push({ id: Date.now(), page: nextPage, visitors: 0, conversion: 0, dropOff: 0 });
     this.selectedSteps.set(steps);
     this.analyzed.set(false);
@@ -294,30 +353,50 @@ export class FunnelsComponent {
   }
 
   resetFunnel() {
+    const pages = this.availablePages();
+    const a = pages[0] ?? '/';
+    const b = pages[1] ?? a;
     this.selectedSteps.set([
-      { id: 1, page: '/home', visitors: 0, conversion: 0, dropOff: 0 },
-      { id: 2, page: '/books', visitors: 0, conversion: 0, dropOff: 0 },
-      { id: 3, page: '/pricing', visitors: 0, conversion: 0, dropOff: 0 },
+      { id: 1, page: a, visitors: 0, conversion: 0, dropOff: 0 },
+      { id: 2, page: b, visitors: 0, conversion: 0, dropOff: 0 },
     ]);
     this.analyzed.set(false);
   }
 
   analyzeFunnel() {
-    const steps = this.selectedSteps();
-    let visitors = 10000 + Math.floor(Math.random() * 5000);
-    const results: FunnelBuilderStep[] = [];
-
-    steps.forEach((step, i) => {
-      const conv = i === 0 ? 100 : Math.round((visitors / results[0].visitors) * 100);
-      const dropOff = i === 0 ? 0 : Math.round((1 - visitors / results[i - 1].visitors) * 100);
-      results.push({ ...step, visitors, conversion: conv, dropOff });
-      visitors = Math.round(visitors * (0.35 + Math.random() * 0.35));
-    });
-
-    this.funnelResults.set(results);
-    this.overallConversion.set(
-      ((results[results.length - 1].visitors / results[0].visitors) * 100).toFixed(1)
-    );
-    this.analyzed.set(true);
+    const siteId = this.siteId;
+    if (!siteId) {
+      this.loadError.set('Select a site from the header first.');
+      return;
+    }
+    const steps = this.selectedSteps().map(s => s.page);
+    const days = timeRangeToDays('30d');
+    this.api
+      .funnels(siteId, steps, days)
+      .pipe(
+        map(funnel => ({ ok: true as const, funnel })),
+        catchError(err => of({ ok: false as const, err, funnel: [] as FunnelStepDto[] })),
+      )
+      .subscribe(result => {
+        if (!result.ok) {
+          this.loadError.set(httpErrorMessage(result.err));
+          return;
+        }
+        this.loadError.set('');
+        const funnel = result.funnel;
+        const results: FunnelBuilderStep[] = funnel.map((f, idx) => ({
+          id: idx + 1,
+          page: f.step,
+          visitors: f.entered,
+          conversion: Math.min(100, Math.round(f.conversionRate * 10) / 10),
+          dropOff: Math.round(f.dropOffRate * 10) / 10,
+        }));
+        this.funnelResults.set(results);
+        const first = funnel[0]?.entered ?? 0;
+        const last = funnel[funnel.length - 1]?.completed ?? 0;
+        const overall = first === 0 ? 0 : (last / first) * 100;
+        this.overallConversion.set(overall.toFixed(1));
+        this.analyzed.set(true);
+      });
   }
 }

@@ -47,6 +47,40 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 
 builder.Services.AddAuthorization();
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("Frontend", policy =>
+    {
+        if (builder.Environment.IsDevelopment())
+        {
+            // Angular CLI may use any localhost port (e.g. 4200 busy → 50065).
+            policy
+                .SetIsOriginAllowed(static origin =>
+                {
+                    if (string.IsNullOrEmpty(origin)) return false;
+                    try
+                    {
+                        var uri = new Uri(origin);
+                        return uri.Scheme is "http" or "https"
+                               && (uri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase)
+                                   || uri.Host == "127.0.0.1");
+                    }
+                    catch
+                    {
+                        return false;
+                    }
+                })
+                .AllowAnyHeader()
+                .AllowAnyMethod();
+        }
+        else
+        {
+            policy.WithOrigins("http://localhost:4200", "http://127.0.0.1:4200")
+                .AllowAnyHeader()
+                .AllowAnyMethod();
+        }
+    });
+});
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -59,10 +93,23 @@ builder.Services.AddRateLimiter(options =>
 });
 
 var app = builder.Build();
-using (var scope = app.Services.CreateScope())
+var applyMigrationsOnStartup = app.Configuration.GetValue(
+    "Database:ApplyMigrationsOnStartup",
+    app.Environment.IsProduction());
+
+if (applyMigrationsOnStartup)
 {
-    var schema = scope.ServiceProvider.GetRequiredService<ISchemaInitializer>();
-    await schema.InitializeAsync();
+    using var scope = app.Services.CreateScope();
+    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+    try
+    {
+        var schema = scope.ServiceProvider.GetRequiredService<ISchemaInitializer>();
+        await schema.InitializeAsync();
+    }
+    catch (Exception ex) when (app.Environment.IsDevelopment())
+    {
+        logger.LogWarning(ex, "Database migration failed in Development. Continuing startup.");
+    }
 }
 
 if (app.Environment.IsDevelopment())
@@ -72,6 +119,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseForwardedHeaders();
+app.UseCors("Frontend");
 app.UseHttpsRedirection();
 app.UseRateLimiter();
 app.UseAuthentication();

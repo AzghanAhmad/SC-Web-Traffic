@@ -140,3 +140,4 @@ E:\Projects\Project 3 (B)\project\backend\SCWebTraffic.API\bin\Debug\net10.0\ru\
 E:\Projects\Project 3 (B)\project\backend\SCWebTraffic.API\bin\Debug\net10.0\tr\Microsoft.CodeAnalysis.Workspaces.MSBuild.BuildHost.resources.dll
 E:\Projects\Project 3 (B)\project\backend\SCWebTraffic.API\bin\Debug\net10.0\zh-Hans\Microsoft.CodeAnalysis.Workspaces.MSBuild.BuildHost.resources.dll
 E:\Projects\Project 3 (B)\project\backend\SCWebTraffic.API\bin\Debug\net10.0\zh-Hant\Microsoft.CodeAnalysis.Workspaces.MSBuild.BuildHost.resources.dll
+E:\Projects\Project 3 (B)\project\backend\SCWebTraffic.API\obj\Debug\net10.0\SCWebTraffic.API.sourcelink.json

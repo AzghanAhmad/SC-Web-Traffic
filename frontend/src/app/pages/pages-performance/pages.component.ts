@@ -1,6 +1,13 @@
-import { Component, OnInit, ViewChild, ElementRef, AfterViewInit } from '@angular/core';
+import { Component, DestroyRef, Injector, ViewChild, ElementRef, AfterViewInit, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { MockDataService, PagePerformance } from '../../services/mock-data.service';
+import { toObservable, takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { of } from 'rxjs';
+import { catchError, map, switchMap } from 'rxjs/operators';
+import type { PagePerformance, PagePointDto } from '../../models/analytics.types';
+import { ActiveSiteService } from '../../services/active-site.service';
+import { TrafficApiService } from '../../services/traffic-api.service';
+import { formatDurationSeconds, httpErrorMessage } from '../../utils/analytics.helpers';
+import { OutlineIconComponent } from '../../shared/outline-icon/outline-icon.component';
 import { Chart, registerables } from 'chart.js';
 
 Chart.register(...registerables);
@@ -8,11 +15,14 @@ Chart.register(...registerables);
 @Component({
   selector: 'app-pages',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, OutlineIconComponent],
   template: `
     <div class="page-container">
+      @if (loadError()) {
+        <div class="error-banner">{{ loadError() }}</div>
+      }
       <div class="page-header animate-in">
-        <h1 class="page-title">📄 Pages Performance</h1>
+        <h1 class="page-title">Pages Performance</h1>
         <p class="page-subtitle">See how your individual pages are performing</p>
       </div>
 
@@ -52,7 +62,7 @@ Chart.register(...registerables);
               @for (page of pages; track page.url) {
                 <tr>
                   <td class="url-cell">
-                    <span class="url-icon">🔗</span>
+                    <span class="url-icon"><app-outline-icon name="link" size="sm"></app-outline-icon></span>
                     {{ page.url }}
                   </td>
                   <td class="td-bold">{{ page.views | number }}</td>
@@ -77,6 +87,15 @@ Chart.register(...registerables);
   `,
   styles: [`
     .page-container { padding: 28px; max-width: 1440px; margin: 0 auto; }
+    .error-banner {
+      padding: 12px 16px;
+      border-radius: var(--radius-md);
+      font-size: 13px;
+      margin-bottom: 16px;
+      border: 1px solid rgb(var(--color-border));
+      background: rgba(248, 113, 113, 0.1);
+      color: rgb(248, 113, 113);
+    }
     .page-header { margin-bottom: 28px; }
     .page-title { font-size: 24px; font-weight: 700; color: rgb(var(--color-text-primary)); letter-spacing: -0.02em; }
     .page-subtitle { font-size: 14px; color: rgb(var(--color-text-muted)); margin-top: 4px; }
@@ -97,7 +116,11 @@ Chart.register(...registerables);
       font-family: 'SF Mono', 'Fira Code', monospace;
       font-size: 13px !important;
     }
-    .url-icon { font-size: 14px; }
+    .url-icon {
+      display: inline-flex;
+      align-items: center;
+      color: rgb(var(--color-text-muted));
+    }
     .td-bold { font-weight: 600; color: rgb(var(--color-text-primary)) !important; }
 
     .bounce-cell { display: flex; align-items: center; gap: 10px; }
@@ -115,19 +138,59 @@ Chart.register(...registerables);
     @media (max-width: 768px) { .page-container { padding: 16px; } }
   `]
 })
-export class PagesComponent implements OnInit, AfterViewInit {
+export class PagesComponent implements AfterViewInit {
   @ViewChild('pagesChart') pagesChartRef!: ElementRef<HTMLCanvasElement>;
 
+  private readonly injector = inject(Injector);
+  private readonly destroyRef = inject(DestroyRef);
+  private readonly activeSite = inject(ActiveSiteService);
+  private readonly api = inject(TrafficApiService);
+
   pages: PagePerformance[] = [];
+  loadError = signal('');
+  private pagesChart: Chart | null = null;
 
-  constructor(private dataService: MockDataService) {}
-
-  ngOnInit() {
-    this.pages = this.dataService.getPagePerformance();
+  constructor() {
+    toObservable(this.activeSite.site, { injector: this.injector })
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        switchMap(site => {
+          if (!site) {
+            this.loadError.set('');
+            return of({ ok: true as const, rows: [] as PagePointDto[] });
+          }
+          return this.api.pages(site.siteId, 30).pipe(
+            map(rows => ({ ok: true as const, rows })),
+            catchError(err => of({ ok: false as const, err, rows: [] as PagePointDto[] })),
+          );
+        })
+      )
+      .subscribe(result => {
+        if (result.ok) this.loadError.set('');
+        else this.loadError.set(httpErrorMessage(result.err));
+        const rows = result.rows;
+        this.pages = rows.map(p => ({
+          url: p.pageUrl,
+          views: p.views,
+          avgTime: formatDurationSeconds(p.avgTimeOnPageSeconds),
+          bounceRate: 0,
+          conversions: 0,
+        }));
+        queueMicrotask(() => this.syncChart());
+      });
   }
 
   ngAfterViewInit() {
-    setTimeout(() => this.createChart(), 300);
+    setTimeout(() => this.syncChart(), 300);
+  }
+
+  private syncChart() {
+    const canvas = this.pagesChartRef?.nativeElement;
+    if (!canvas) return;
+    Chart.getChart(canvas)?.destroy();
+    this.pagesChart = null;
+    if (!this.pages.length) return;
+    this.createChart();
   }
 
   private createChart() {
@@ -136,7 +199,7 @@ export class PagesComponent implements OnInit, AfterViewInit {
 
     const sorted = [...this.pages].sort((a, b) => b.views - a.views).slice(0, 6);
 
-    new Chart(ctx, {
+    this.pagesChart = new Chart(ctx, {
       type: 'bar',
       data: {
         labels: sorted.map(p => p.url),
