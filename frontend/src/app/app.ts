@@ -1,5 +1,6 @@
-import { Component } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { RouterOutlet } from '@angular/router';
+import { GoogleAnalyticsService } from './services/google-analytics.service';
 
 @Component({
   selector: 'app-root',
@@ -10,6 +11,9 @@ import { RouterOutlet } from '@angular/router';
     :host {
       display: block;
     }
-  `]
+  `],
 })
-export class App { }
+export class App {
+  /** Subscribes to router for SPA page_path hits. */
+  private readonly _ga = inject(GoogleAnalyticsService);
+}

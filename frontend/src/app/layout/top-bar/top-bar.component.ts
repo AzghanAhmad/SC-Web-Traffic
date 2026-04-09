@@ -6,6 +6,7 @@ import { finalize } from 'rxjs/operators';
 import { AuthService } from '../../services/auth.service';
 import { ActiveSiteService } from '../../services/active-site.service';
 import { httpErrorMessage } from '../../utils/analytics.helpers';
+import { trackGaEvent } from '../../utils/ga-events';
 
 @Component({
   selector: 'app-top-bar',
@@ -56,9 +57,25 @@ import { httpErrorMessage } from '../../utils/analytics.helpers';
             {{ registering() ? '…' : 'Track' }}
           </button>
         </form>
-        @if (activeSite.site(); as s) {
-          <span class="active-site-pill" title="Analytics are scoped to this property">{{ s.domain }}</span>
-        }
+        <div class="site-switcher-wrap">
+          <label class="sr-only" for="site-switcher">Switch tracked website</label>
+          <select
+            id="site-switcher"
+            class="site-switcher"
+            [ngModel]="activeSite.site()?.siteId ?? ''"
+            (ngModelChange)="onSiteSwitch($event)"
+            [disabled]="!activeSite.sites().length || activeSite.loading()"
+            title="Switch between your registered properties"
+          >
+            @if (!activeSite.sites().length) {
+              <option value="">No sites — use Track above</option>
+            } @else {
+              @for (s of activeSite.sites(); track s.siteId) {
+                <option [value]="s.siteId">{{ s.domain }}</option>
+              }
+            }
+          </select>
+        </div>
         @if (siteError()) {
           <span class="site-error">{{ siteError() }}</span>
         }
@@ -172,20 +189,42 @@ import { httpErrorMessage } from '../../utils/analytics.helpers';
       cursor: not-allowed;
     }
 
-    .active-site-pill {
-      font-size: 11px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      color: #a5b4fc;
-      padding: 6px 10px;
-      border-radius: 9999px;
-      background: rgba(129, 140, 248, 0.15);
-      border: 1px solid rgba(129, 140, 248, 0.35);
-      white-space: nowrap;
-      max-width: 200px;
-      overflow: hidden;
-      text-overflow: ellipsis;
+    .site-switcher-wrap {
+      flex-shrink: 0;
+    }
+
+    .site-switcher {
+      height: 36px;
+      min-width: 160px;
+      max-width: 260px;
+      padding: 0 32px 0 12px;
+      border-radius: 10px;
+      border: 1px solid rgba(129, 140, 248, 0.45);
+      background: rgba(15, 23, 42, 0.5) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'%3E%3Cpath d='M3 4.5L6 7.5L9 4.5' stroke='%23a5b4fc' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 10px center;
+      color: #e0e7ff;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: none;
+      letter-spacing: 0.02em;
+      cursor: pointer;
+      outline: none;
+      appearance: none;
+      -webkit-appearance: none;
+    }
+
+    .site-switcher:focus {
+      border-color: rgba(165, 180, 252, 0.85);
+      box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.3);
+    }
+
+    .site-switcher:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
+    .site-switcher option {
+      color: #1e293b;
+      background: #f8fafc;
     }
 
     .site-error {
@@ -400,6 +439,16 @@ export class TopBarComponent {
   private readonly router = inject(Router);
   private readonly hostRef = inject(ElementRef<HTMLElement>);
 
+  onSiteSwitch(siteId: string): void {
+    if (!siteId || siteId === this.activeSite.site()?.siteId) return;
+    this.activeSite.selectSiteById(siteId);
+    const s = this.activeSite.site();
+    trackGaEvent('select_property', {
+      event_category: 'engagement',
+      event_label: s?.domain ?? siteId,
+    });
+  }
+
   onTrackSite(): void {
     const url = this.siteUrlInput.trim();
     this.siteError.set('');
@@ -411,6 +460,10 @@ export class TopBarComponent {
     this.activeSite.register(url).pipe(finalize(() => this.registering.set(false))).subscribe({
       next: () => {
         this.siteUrlInput = '';
+        trackGaEvent('track_new_site', {
+          event_category: 'engagement',
+          event_label: url.slice(0, 120),
+        });
         void this.router.navigateByUrl('/');
       },
       error: err => this.siteError.set(httpErrorMessage(err)),
