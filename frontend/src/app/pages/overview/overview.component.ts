@@ -27,6 +27,7 @@ import type {
 import { Chart, registerables } from 'chart.js';
 import { ActiveSiteService } from '../../services/active-site.service';
 import { TrafficApiService } from '../../services/traffic-api.service';
+import { TrafficAutoRefreshService } from '../../services/traffic-auto-refresh.service';
 import {
   buildOverviewKpis,
   httpErrorMessage,
@@ -401,6 +402,7 @@ export class OverviewComponent implements AfterViewInit {
   private readonly destroyRef = inject(DestroyRef);
   readonly activeSite = inject(ActiveSiteService);
   private readonly api = inject(TrafficApiService);
+  private readonly trafficRefresh = inject(TrafficAutoRefreshService);
 
   /** Signals: Angular 21 is zoneless by default; async HTTP updates must notify the template. */
   kpiData = signal<KpiData[]>([]);
@@ -418,6 +420,7 @@ export class OverviewComponent implements AfterViewInit {
     combineLatest([
       toObservable(this.activeSite.site, { injector: this.injector }),
       toObservable(this.timeRange, { injector: this.injector }),
+      toObservable(this.trafficRefresh.pulse, { injector: this.injector }),
     ])
       .pipe(
         takeUntilDestroyed(this.destroyRef),

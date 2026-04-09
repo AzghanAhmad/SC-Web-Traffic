@@ -2,11 +2,12 @@ import { Component, DestroyRef, Injector, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { toObservable, takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { of } from 'rxjs';
+import { combineLatest, of } from 'rxjs';
 import { catchError, map, switchMap } from 'rxjs/operators';
 import type { HeatmapPointDto, PagePointDto } from '../../models/analytics.types';
 import { ActiveSiteService } from '../../services/active-site.service';
 import { TrafficApiService } from '../../services/traffic-api.service';
+import { TrafficAutoRefreshService } from '../../services/traffic-auto-refresh.service';
 import { httpErrorMessage, timeRangeToDays } from '../../utils/analytics.helpers';
 
 @Component({
@@ -217,6 +218,7 @@ export class HeatmapsComponent {
   private readonly injector = inject(Injector);
   private readonly destroyRef = inject(DestroyRef);
   private readonly api = inject(TrafficApiService);
+  private readonly trafficRefresh = inject(TrafficAutoRefreshService);
 
   activeTab = signal<'click' | 'scroll'>('click');
   pageOptions = signal<string[]>(['/']);
@@ -227,10 +229,13 @@ export class HeatmapsComponent {
   loadError = signal('');
 
   constructor() {
-    toObservable(this.activeSite.site, { injector: this.injector })
+    combineLatest([
+      toObservable(this.activeSite.site, { injector: this.injector }),
+      toObservable(this.trafficRefresh.pulse, { injector: this.injector }),
+    ])
       .pipe(
         takeUntilDestroyed(this.destroyRef),
-        switchMap(site => {
+        switchMap(([site]) => {
           if (!site) {
             this.loadError.set('');
             this.pageOptions.set(['/']);

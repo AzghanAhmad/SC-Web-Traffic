@@ -1,11 +1,21 @@
-import { Component, DestroyRef, Injector, ViewChild, ElementRef, AfterViewInit, inject, signal } from '@angular/core';
+import {
+  Component,
+  DestroyRef,
+  Injector,
+  ViewChild,
+  ElementRef,
+  AfterViewInit,
+  inject,
+  signal,
+} from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { toObservable, takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { of } from 'rxjs';
+import { combineLatest, of } from 'rxjs';
 import { catchError, map, switchMap } from 'rxjs/operators';
 import type { Campaign, CampaignPointDto } from '../../models/analytics.types';
 import { ActiveSiteService } from '../../services/active-site.service';
 import { TrafficApiService } from '../../services/traffic-api.service';
+import { TrafficAutoRefreshService } from '../../services/traffic-auto-refresh.service';
 import { httpErrorMessage } from '../../utils/analytics.helpers';
 import { Chart, registerables } from 'chart.js';
 
@@ -57,7 +67,7 @@ Chart.register(...registerables);
               </tr>
             </thead>
             <tbody>
-              @for (campaign of campaigns; track campaign.name) {
+              @for (campaign of campaigns(); track campaign.name) {
                 <tr>
                   <td class="campaign-name">{{ campaign.name }}</td>
                   <td>
@@ -118,18 +128,23 @@ export class CampaignsComponent implements AfterViewInit {
   private readonly destroyRef = inject(DestroyRef);
   private readonly activeSite = inject(ActiveSiteService);
   private readonly api = inject(TrafficApiService);
+  private readonly trafficRefresh = inject(TrafficAutoRefreshService);
 
-  campaigns: Campaign[] = [];
+  campaigns = signal<Campaign[]>([]);
   loadError = signal('');
   private campaignChart: Chart | null = null;
 
   constructor() {
-    toObservable(this.activeSite.site, { injector: this.injector })
+    combineLatest([
+      toObservable(this.activeSite.site, { injector: this.injector }),
+      toObservable(this.trafficRefresh.pulse, { injector: this.injector }),
+    ])
       .pipe(
         takeUntilDestroyed(this.destroyRef),
-        switchMap(site => {
+        switchMap(([site]) => {
           if (!site) {
             this.loadError.set('');
+            this.campaigns.set([]);
             return of({ ok: true as const, rows: [] as CampaignPointDto[] });
           }
           return this.api.campaigns(site.siteId, 30).pipe(
@@ -142,14 +157,16 @@ export class CampaignsComponent implements AfterViewInit {
         if (result.ok) this.loadError.set('');
         else this.loadError.set(httpErrorMessage(result.err));
         const rows = result.rows;
-        this.campaigns = rows.map(r => ({
-          name: r.name,
-          visits: r.visits,
-          engagement: '—',
-          conversions: r.conversions,
-          revenue: 0,
-          status: 'active',
-        }));
+        this.campaigns.set(
+          rows.map(r => ({
+            name: r.name,
+            visits: r.visits,
+            engagement: '—',
+            conversions: r.conversions,
+            revenue: 0,
+            status: 'active',
+          })),
+        );
         queueMicrotask(() => this.syncChart());
       });
   }
@@ -163,7 +180,7 @@ export class CampaignsComponent implements AfterViewInit {
     if (!canvas) return;
     Chart.getChart(canvas)?.destroy();
     this.campaignChart = null;
-    if (!this.campaigns.length) return;
+    if (!this.campaigns().length) return;
     this.createChart();
   }
 
@@ -171,14 +188,16 @@ export class CampaignsComponent implements AfterViewInit {
     const ctx = this.campaignChartRef?.nativeElement?.getContext('2d');
     if (!ctx) return;
 
+    const list = this.campaigns();
+
     this.campaignChart = new Chart(ctx, {
       type: 'bar',
       data: {
-        labels: this.campaigns.map(c => c.name),
+        labels: list.map(c => c.name),
         datasets: [
           {
             label: 'Visits',
-            data: this.campaigns.map(c => c.visits),
+            data: list.map(c => c.visits),
             backgroundColor: 'rgba(99, 102, 241, 0.25)',
             borderColor: '#6366f1',
             borderWidth: 1,
@@ -186,7 +205,7 @@ export class CampaignsComponent implements AfterViewInit {
           },
           {
             label: 'Conversions',
-            data: this.campaigns.map(c => c.conversions),
+            data: list.map(c => c.conversions),
             backgroundColor: 'rgba(52, 211, 153, 0.25)',
             borderColor: '#34d399',
             borderWidth: 1,

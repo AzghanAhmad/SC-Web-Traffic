@@ -1,6 +1,7 @@
 import { Component, inject } from '@angular/core';
 import { RouterOutlet } from '@angular/router';
 import { GoogleAnalyticsService } from './services/google-analytics.service';
+import { TrafficAutoRefreshService } from './services/traffic-auto-refresh.service';
 
 @Component({
   selector: 'app-root',
@@ -16,4 +17,6 @@ import { GoogleAnalyticsService } from './services/google-analytics.service';
 export class App {
   /** Subscribes to router for SPA page_path hits. */
   private readonly _ga = inject(GoogleAnalyticsService);
+  /** Starts browser interval for dashboard auto-refresh. */
+  private readonly _refresh = inject(TrafficAutoRefreshService);
 }

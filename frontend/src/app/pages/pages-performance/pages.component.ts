@@ -1,11 +1,21 @@
-import { Component, DestroyRef, Injector, ViewChild, ElementRef, AfterViewInit, inject, signal } from '@angular/core';
+import {
+  Component,
+  DestroyRef,
+  Injector,
+  ViewChild,
+  ElementRef,
+  AfterViewInit,
+  inject,
+  signal,
+} from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { toObservable, takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { of } from 'rxjs';
+import { combineLatest, of } from 'rxjs';
 import { catchError, map, switchMap } from 'rxjs/operators';
 import type { PagePerformance, PagePointDto } from '../../models/analytics.types';
 import { ActiveSiteService } from '../../services/active-site.service';
 import { TrafficApiService } from '../../services/traffic-api.service';
+import { TrafficAutoRefreshService } from '../../services/traffic-auto-refresh.service';
 import { formatDurationSeconds, httpErrorMessage } from '../../utils/analytics.helpers';
 import { OutlineIconComponent } from '../../shared/outline-icon/outline-icon.component';
 import { Chart, registerables } from 'chart.js';
@@ -59,7 +69,7 @@ Chart.register(...registerables);
               </tr>
             </thead>
             <tbody>
-              @for (page of pages; track page.url) {
+              @for (page of pages(); track page.url) {
                 <tr>
                   <td class="url-cell">
                     <span class="url-icon"><app-outline-icon name="link" size="sm"></app-outline-icon></span>
@@ -145,18 +155,23 @@ export class PagesComponent implements AfterViewInit {
   private readonly destroyRef = inject(DestroyRef);
   private readonly activeSite = inject(ActiveSiteService);
   private readonly api = inject(TrafficApiService);
+  private readonly trafficRefresh = inject(TrafficAutoRefreshService);
 
-  pages: PagePerformance[] = [];
+  pages = signal<PagePerformance[]>([]);
   loadError = signal('');
   private pagesChart: Chart | null = null;
 
   constructor() {
-    toObservable(this.activeSite.site, { injector: this.injector })
+    combineLatest([
+      toObservable(this.activeSite.site, { injector: this.injector }),
+      toObservable(this.trafficRefresh.pulse, { injector: this.injector }),
+    ])
       .pipe(
         takeUntilDestroyed(this.destroyRef),
-        switchMap(site => {
+        switchMap(([site]) => {
           if (!site) {
             this.loadError.set('');
+            this.pages.set([]);
             return of({ ok: true as const, rows: [] as PagePointDto[] });
           }
           return this.api.pages(site.siteId, 30).pipe(
@@ -169,13 +184,15 @@ export class PagesComponent implements AfterViewInit {
         if (result.ok) this.loadError.set('');
         else this.loadError.set(httpErrorMessage(result.err));
         const rows = result.rows;
-        this.pages = rows.map(p => ({
-          url: p.pageUrl,
-          views: p.views,
-          avgTime: formatDurationSeconds(p.avgTimeOnPageSeconds),
-          bounceRate: 0,
-          conversions: 0,
-        }));
+        this.pages.set(
+          rows.map(p => ({
+            url: p.pageUrl,
+            views: p.views,
+            avgTime: formatDurationSeconds(p.avgTimeOnPageSeconds),
+            bounceRate: 0,
+            conversions: 0,
+          })),
+        );
         queueMicrotask(() => this.syncChart());
       });
   }
@@ -189,7 +206,7 @@ export class PagesComponent implements AfterViewInit {
     if (!canvas) return;
     Chart.getChart(canvas)?.destroy();
     this.pagesChart = null;
-    if (!this.pages.length) return;
+    if (!this.pages().length) return;
     this.createChart();
   }
 
@@ -197,7 +214,7 @@ export class PagesComponent implements AfterViewInit {
     const ctx = this.pagesChartRef?.nativeElement?.getContext('2d');
     if (!ctx) return;
 
-    const sorted = [...this.pages].sort((a, b) => b.views - a.views).slice(0, 6);
+    const sorted = [...this.pages()].sort((a, b) => b.views - a.views).slice(0, 6);
 
     this.pagesChart = new Chart(ctx, {
       type: 'bar',

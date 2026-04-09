@@ -14,6 +14,7 @@ import type {
 import { Chart, registerables } from 'chart.js';
 import { ActiveSiteService } from '../../services/active-site.service';
 import { TrafficApiService } from '../../services/traffic-api.service';
+import { TrafficAutoRefreshService } from '../../services/traffic-auto-refresh.service';
 import { httpErrorMessage, timeRangeToDays, trendToTimeSeries } from '../../utils/analytics.helpers';
 
 Chart.register(...registerables);
@@ -227,6 +228,7 @@ export class TrafficComponent implements AfterViewInit {
   private readonly destroyRef = inject(DestroyRef);
   private readonly activeSite = inject(ActiveSiteService);
   private readonly api = inject(TrafficApiService);
+  private readonly trafficRefresh = inject(TrafficAutoRefreshService);
 
   /** Signals: zoneless Angular — HTTP subscribe must update signals so the table/charts repaint. */
   timeSeriesData = signal<TimeSeriesPoint[]>([]);
@@ -242,6 +244,7 @@ export class TrafficComponent implements AfterViewInit {
     combineLatest([
       toObservable(this.activeSite.site, { injector: this.injector }),
       toObservable(this.timeRange, { injector: this.injector }),
+      toObservable(this.trafficRefresh.pulse, { injector: this.injector }),
     ])
       .pipe(
         takeUntilDestroyed(this.destroyRef),

@@ -1,7 +1,7 @@
 import { Component, DestroyRef, Injector, ViewChild, ElementRef, AfterViewInit, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { toObservable, takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { forkJoin, of, type Observable } from 'rxjs';
+import { combineLatest, forkJoin, of, type Observable } from 'rxjs';
 import { catchError, map, switchMap } from 'rxjs/operators';
 import type {
   ConversionMetric,
@@ -13,6 +13,7 @@ import type {
 } from '../../models/analytics.types';
 import { ActiveSiteService } from '../../services/active-site.service';
 import { TrafficApiService } from '../../services/traffic-api.service';
+import { TrafficAutoRefreshService } from '../../services/traffic-auto-refresh.service';
 import { httpErrorMessage } from '../../utils/analytics.helpers';
 import { OutlineIconComponent } from '../../shared/outline-icon/outline-icon.component';
 import { Chart, registerables } from 'chart.js';
@@ -252,6 +253,7 @@ export class ConversionsComponent implements AfterViewInit {
   private readonly destroyRef = inject(DestroyRef);
   private readonly activeSite = inject(ActiveSiteService);
   private readonly api = inject(TrafficApiService);
+  private readonly trafficRefresh = inject(TrafficAutoRefreshService);
 
   /** Signals: zoneless — HTTP-driven UI must use signals to repaint without user interaction. */
   conversionMetrics = signal<ConversionMetric[]>([]);
@@ -263,10 +265,13 @@ export class ConversionsComponent implements AfterViewInit {
 
   constructor() {
     const days = 30;
-    toObservable(this.activeSite.site, { injector: this.injector })
+    combineLatest([
+      toObservable(this.activeSite.site, { injector: this.injector }),
+      toObservable(this.trafficRefresh.pulse, { injector: this.injector }),
+    ])
       .pipe(
         takeUntilDestroyed(this.destroyRef),
-        switchMap(site => {
+        switchMap(([site]) => {
           if (!site) {
             this.loadError.set('');
             return of<{ metrics: ConversionMetric[]; funnel: FunnelStep[]; labels: string[]; conv: number[] } | null>(null);

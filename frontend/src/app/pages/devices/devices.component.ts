@@ -1,11 +1,12 @@
 import { Component, DestroyRef, Injector, ViewChild, ElementRef, AfterViewInit, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { toObservable, takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { of } from 'rxjs';
+import { combineLatest, of } from 'rxjs';
 import { catchError, map, switchMap } from 'rxjs/operators';
 import type { DeviceData, DevicePointDto } from '../../models/analytics.types';
 import { ActiveSiteService } from '../../services/active-site.service';
 import { TrafficApiService } from '../../services/traffic-api.service';
+import { TrafficAutoRefreshService } from '../../services/traffic-auto-refresh.service';
 import { httpErrorMessage } from '../../utils/analytics.helpers';
 import { OutlineIconComponent } from '../../shared/outline-icon/outline-icon.component';
 import { Chart, registerables } from 'chart.js';
@@ -213,6 +214,7 @@ export class DevicesComponent implements AfterViewInit {
   private readonly destroyRef = inject(DestroyRef);
   private readonly activeSite = inject(ActiveSiteService);
   private readonly api = inject(TrafficApiService);
+  private readonly trafficRefresh = inject(TrafficAutoRefreshService);
 
   /** Signal: zoneless — device cards repaint when API data arrives. */
   devices = signal<DeviceData[]>([]);
@@ -221,10 +223,13 @@ export class DevicesComponent implements AfterViewInit {
   private barChart: Chart | null = null;
 
   constructor() {
-    toObservable(this.activeSite.site, { injector: this.injector })
+    combineLatest([
+      toObservable(this.activeSite.site, { injector: this.injector }),
+      toObservable(this.trafficRefresh.pulse, { injector: this.injector }),
+    ])
       .pipe(
         takeUntilDestroyed(this.destroyRef),
-        switchMap(site => {
+        switchMap(([site]) => {
           if (!site) {
             this.loadError.set('');
             return of({ ok: true as const, rows: [] as DevicePointDto[] });

@@ -1,7 +1,8 @@
-import { Component, ChangeDetectorRef, OnInit } from '@angular/core';
+import { Component, ChangeDetectorRef, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AuthService } from '../../services/auth.service';
+import { ActiveSiteService } from '../../services/active-site.service';
 
 @Component({
   selector: 'app-settings',
@@ -125,6 +126,33 @@ import { AuthService } from '../../services/auth.service';
               <button class="btn-primary" style="margin-top: 0.75rem;" (click)="saveSettings()" [disabled]="saving">
                 {{ saving ? 'Saving...' : 'Save Changes' }}
               </button>
+            </div>
+          </div>
+
+          <!-- Site tracking (how data reaches this dashboard) -->
+          <div class="settings-section" *ngIf="activeSection === 'tracking'">
+            <div class="card">
+              <h2 class="section-title">Send traffic from your website</h2>
+              <p class="section-desc">
+                Charts and tables in this app use <strong>your ScribeCount API</strong> (<code>/api/collect</code>), not Google Analytics.
+                Register a property with <strong>Track</strong> in the header, then post events from that site (or from Thunder Client for tests).
+              </p>
+              <p class="section-desc" *ngIf="activeSite.site() as s">
+                Active property: <strong>{{ s.domain }}</strong><br />
+                <span class="mono-id">siteId: {{ s.siteId }}</span>
+              </p>
+              <p class="section-desc" *ngIf="!activeSite.site()">
+                No active property yet — add a URL with <strong>Track</strong> first.
+              </p>
+            </div>
+            <div class="card">
+              <h2 class="section-title">Example: page view (JSON)</h2>
+              <p class="section-desc"><code>eventType</code>: 1 = PageView, 2 = Click, 3 = Scroll, 4 = Conversion. <code>pageUrl</code> must be a full <code>https://…</code> URL.</p>
+              <pre class="tracking-code">{{ collectSampleJson() }}</pre>
+              <p class="section-desc">
+                POST to <code>{{ collectUrl() }}</code> with <code>Content-Type: application/json</code>.
+                From a <em>different</em> domain, your API must allow that origin in CORS (production: add your site URL in the API CORS policy).
+              </p>
             </div>
           </div>
 
@@ -571,6 +599,26 @@ import { AuthService } from '../../services/auth.service';
     .toast.show { transform: translateY(0); opacity: 1; }
     .toast svg { width: 18px; height: 18px; color: #6ee7b7; }
 
+    .mono-id {
+      font-family: ui-monospace, monospace;
+      font-size: 12px;
+      color: rgb(var(--color-text-muted));
+      word-break: break-all;
+    }
+
+    .tracking-code {
+      margin: 12px 0 0;
+      padding: 14px 16px;
+      border-radius: 10px;
+      background: rgb(var(--color-surface-elevated));
+      border: 1px solid rgb(var(--color-border));
+      font-size: 12px;
+      line-height: 1.5;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
     @media (max-width: 768px) {
       .page { padding: 16px; }
       .settings-layout { grid-template-columns: 1fr; }
@@ -605,10 +653,32 @@ export class SettingsComponent implements OnInit {
   confirmPassword = '';
   saving = false;
 
+  readonly activeSite = inject(ActiveSiteService);
+
   constructor(
     private cdr: ChangeDetectorRef,
     private auth: AuthService,
-  ) { }
+  ) {}
+
+  collectUrl(): string {
+    if (typeof window === 'undefined') return '/api/collect';
+    return `${window.location.origin}/api/collect`;
+  }
+
+  collectSampleJson(): string {
+    const id = this.activeSite.site()?.siteId ?? 'PASTE_SITE_ID_FROM_ABOVE';
+    return JSON.stringify(
+      {
+        siteId: id,
+        eventType: 1,
+        pageUrl: 'https://your-website.com/',
+        metadata: {},
+        timestamp: null,
+      },
+      null,
+      2,
+    );
+  }
 
   ngOnInit(): void {
     const u = this.auth.user();
@@ -671,6 +741,7 @@ export class SettingsComponent implements OnInit {
   sections = [
     { id: 'account', label: 'Account', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>' },
     { id: 'appearance', label: 'Appearance', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>' },
+    { id: 'tracking', label: 'Site tracking', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>' },
     { id: 'billing', label: 'Billing', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>' }
   ];
 
