@@ -83,7 +83,7 @@ export function buildOverviewKpis(overview: { visitors: number; sessions: number
     },
     {
       label: 'Engagement rate',
-      value: Math.round(overview.engagementRate * 10) / 10,
+      value: Math.round(overview.engagementRate * 1000) / 10,
       change: pctChangeFromSeries(t.map(x => x.sessions)),
       sparkline: pSpark.length ? pSpark : [0],
       suffix: '%',

@@ -59,7 +59,7 @@ Chart.register(...registerables);
           <div class="chart-header">
             <div>
               <h3 class="chart-title">Traffic by Country</h3>
-              <p class="chart-subtitle">Top locations of your audience</p>
+              <p class="chart-subtitle">Based on session country (IP lookup on collect, or CF-IPCountry / metadata.countryCode).</p>
             </div>
           </div>
           <div class="chart-container">

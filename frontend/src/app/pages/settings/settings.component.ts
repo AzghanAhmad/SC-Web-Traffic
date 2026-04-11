@@ -132,27 +132,55 @@ import { ActiveSiteService } from '../../services/active-site.service';
           <!-- Site tracking (how data reaches this dashboard) -->
           <div class="settings-section" *ngIf="activeSection === 'tracking'">
             <div class="card">
-              <h2 class="section-title">Send traffic from your website</h2>
+              <h2 class="section-title">How Overview KPIs are filled (first-party)</h2>
+              <ul class="tracking-steps">
+                <li><strong>Visitors &amp; sessions</strong> — Created automatically when the tracker (or any collect call) runs; one visitor per browser fingerprint, sessions split after ~30 minutes idle.</li>
+                <li><strong>Engagement rate</strong> — % of sessions that did something meaningful: scrolled to <strong>25%+</strong>, <strong>clicked</strong> a link/button/input, viewed <strong>2+ pages</strong>, had <strong>10+ seconds</strong> on a page (send <code>timeOnPage</code> in page-view <code>metadata</code> if you build a custom integration), or had a <strong>conversion</strong>.</li>
+                <li><strong>Conversions</strong> — Send <code>eventType: 4</code> with <code>metadata.type</code> one of <code>Signup</code>, <code>BuyClick</code>, <code>Purchase</code> (optional <code>value</code> for revenue).</li>
+              </ul>
+            </div>
+            <div class="card">
+              <h2 class="section-title">First-party tracking (no third-party analytics)</h2>
               <p class="section-desc">
-                Charts and tables in this app use <strong>your ScribeCount API</strong> (<code>/api/collect</code>), not Google Analytics.
-                Register a property with <strong>Track</strong> in the header, then post events from that site (or from Thunder Client for tests).
+                Data is sent only to <strong>your ScribeCount server</strong> (<code>/api/collect</code>). When someone opens a page with the snippet below, a <strong>page view</strong> is recorded; the same script sends <strong>scroll milestones</strong> and <strong>clicks</strong> on links/buttons/forms for engagement and heatmaps.
               </p>
               <p class="section-desc" *ngIf="activeSite.site() as s">
                 Active property: <strong>{{ s.domain }}</strong><br />
                 <span class="mono-id">siteId: {{ s.siteId }}</span>
               </p>
               <p class="section-desc" *ngIf="!activeSite.site()">
-                No active property yet — add a URL with <strong>Track</strong> first.
+                Add a site URL with <strong>Track</strong> in the header first — you need a <code>siteId</code> for the snippet.
               </p>
             </div>
             <div class="card">
-              <h2 class="section-title">Example: page view (JSON)</h2>
-              <p class="section-desc"><code>eventType</code>: 1 = PageView, 2 = Click, 3 = Scroll, 4 = Conversion. <code>pageUrl</code> must be a full <code>https://…</code> URL.</p>
+              <h2 class="section-title">Easy test (no coding website)</h2>
+              <ol class="tracking-steps">
+                <li>Log in here and register your site with <strong>Track</strong> (copy your <code>siteId</code> from above).</li>
+                <li>Open <strong>Thunder Client</strong>, Postman, or similar → <strong>New POST</strong> to <code>{{ collectUrl() }}</code>, header <code>Content-Type: application/json</code>, body = the JSON in the next card. Send — you should get a JSON success response.</li>
+                <li>Open <strong>Overview</strong> with that property selected — numbers update within about a minute (or after refresh).</li>
+                <li>To mimic “real visitors”, open your real site after you paste the auto-track snippet, or use a second browser / incognito and load a few pages.</li>
+              </ol>
+            </div>
+            <div class="card">
+              <h2 class="section-title">Auto track when the website opens (paste before <code>&lt;/body&gt;</code>)</h2>
+              <p class="section-desc">
+                Replace <code>endpoint</code> if your API is not on the same host as this app (example: <code>https://api.yourdomain.com/api/collect</code>). Production: add your website’s origin to <code>Cors:AllowedOrigins</code> in the API <code>appsettings.json</code>.
+              </p>
+              <pre class="tracking-code">{{ trackerInstallSnippet() }}</pre>
+              <p class="section-desc">The script file is served from this app as <code>{{ trackerScriptSrc() }}</code> (first-party ScribeCount asset).</p>
+            </div>
+            <div class="card">
+              <h2 class="section-title">Manual: one page view (JSON)</h2>
+              <p class="section-desc"><code>eventType</code>: 1 = PageView, 2 = Click, 3 = Scroll, 4 = Conversion. <code>pageUrl</code> must be a full <code>https://…</code> URL (use your real page URL when testing).</p>
               <pre class="tracking-code">{{ collectSampleJson() }}</pre>
               <p class="section-desc">
                 POST to <code>{{ collectUrl() }}</code> with <code>Content-Type: application/json</code>.
-                From a <em>different</em> domain, your API must allow that origin in CORS (production: add your site URL in the API CORS policy).
               </p>
+            </div>
+            <div class="card">
+              <h2 class="section-title">Manual: one conversion (JSON)</h2>
+              <p class="section-desc">After a signup or “buy” action on your site, POST this body (or call <code>scribeCountConversion</code> from the tracker script — see <code>scribe-count.tracker.js</code>).</p>
+              <pre class="tracking-code">{{ collectConversionSampleJson() }}</pre>
             </div>
           </div>
 
@@ -619,6 +647,16 @@ import { ActiveSiteService } from '../../services/active-site.service';
       word-break: break-word;
     }
 
+    .tracking-steps {
+      margin: 12px 0 0;
+      padding-left: 1.25rem;
+      color: rgb(var(--color-text-muted));
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    .tracking-steps li { margin-bottom: 10px; }
+
     @media (max-width: 768px) {
       .page { padding: 16px; }
       .settings-layout { grid-template-columns: 1fr; }
@@ -665,6 +703,25 @@ export class SettingsComponent implements OnInit {
     return `${window.location.origin}/api/collect`;
   }
 
+  trackerScriptSrc(): string {
+    if (typeof window === 'undefined') return '/scribe-count.tracker.js';
+    return `${window.location.origin}/scribe-count.tracker.js`;
+  }
+
+  trackerInstallSnippet(): string {
+    const id = this.activeSite.site()?.siteId ?? 'YOUR_SITE_ID_FROM_TRACK';
+    const endpoint = this.collectUrl();
+    const src = this.trackerScriptSrc();
+    return `<script>
+  window.scribeCountTracking = {
+    siteId: '${id}',
+    endpoint: '${endpoint}',
+    trackSpa: true
+  };
+</script>
+<script src="${src}" defer></script>`;
+  }
+
   collectSampleJson(): string {
     const id = this.activeSite.site()?.siteId ?? 'PASTE_SITE_ID_FROM_ABOVE';
     return JSON.stringify(
@@ -673,6 +730,21 @@ export class SettingsComponent implements OnInit {
         eventType: 1,
         pageUrl: 'https://your-website.com/',
         metadata: {},
+        timestamp: null,
+      },
+      null,
+      2,
+    );
+  }
+
+  collectConversionSampleJson(): string {
+    const id = this.activeSite.site()?.siteId ?? 'PASTE_SITE_ID_FROM_ABOVE';
+    return JSON.stringify(
+      {
+        siteId: id,
+        eventType: 4,
+        pageUrl: 'https://your-website.com/thank-you',
+        metadata: { type: 'Signup', value: null },
         timestamp: null,
       },
       null,

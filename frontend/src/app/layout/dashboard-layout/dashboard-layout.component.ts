@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, inject, signal } from '@angular/core';
 import { Router, RouterOutlet } from '@angular/router';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { SidebarComponent } from '../sidebar/sidebar.component';
@@ -70,31 +70,44 @@ import { AuthService } from '../../services/auth.service';
     }
   `]
 })
-export class DashboardLayoutComponent implements OnInit {
+export class DashboardLayoutComponent implements OnInit, OnDestroy {
   private readonly activeSite = inject(ActiveSiteService);
   private readonly http = inject(HttpClient);
   private readonly auth = inject(AuthService);
   private readonly router = inject(Router);
   sidebarCollapsed = signal(false);
+  /** JWT / session can expire while the user stays on one route; re-check periodically. */
+  private sessionWatchId?: ReturnType<typeof setInterval>;
 
   ngOnInit(): void {
     // Load sites immediately so the overview child does not wait on /Auth/me finishing first.
     if (this.auth.isAuthenticated()) {
       this.activeSite.refresh();
     }
+    this.sessionWatchId = setInterval(() => {
+      if (!this.auth.isAuthenticated()) {
+        this.auth.clearSession();
+        void this.router.navigate(['/login'], { replaceUrl: true });
+      }
+    }, 30_000);
     this.http.get<{ email: string; displayName: string }>('/api/Auth/me').subscribe({
       next: () => this.activeSite.refresh(),
       error: err => {
         const status = err instanceof HttpErrorResponse ? err.status : 0;
         if (status === 401 || status === 403) {
-          this.activeSite.clear();
           this.auth.clearSession();
-          void this.router.navigate(['/login']);
+          void this.router.navigate(['/login'], { replaceUrl: true });
           return;
         }
         this.activeSite.refresh();
       },
     });
+  }
+
+  ngOnDestroy(): void {
+    if (this.sessionWatchId != null) {
+      clearInterval(this.sessionWatchId);
+    }
   }
 
   onSidebarCollapse(collapsed: boolean) {

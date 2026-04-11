@@ -66,7 +66,8 @@ public interface IEventCollectionService
         string ipAddress,
         string userAgent,
         string? referrer,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        string? countryCodeHint = null);
 }
 
 public interface IAnalyticsService

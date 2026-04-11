@@ -15,6 +15,7 @@ import { ActiveSiteService } from '../../services/active-site.service';
 import { TrafficApiService } from '../../services/traffic-api.service';
 import { TrafficAutoRefreshService } from '../../services/traffic-auto-refresh.service';
 import { httpErrorMessage } from '../../utils/analytics.helpers';
+import { funnelDtoToDisplaySteps, funnelStepsFromPageUrls } from '../../utils/funnel.helpers';
 import { OutlineIconComponent } from '../../shared/outline-icon/outline-icon.component';
 import { Chart, registerables } from 'chart.js';
 
@@ -295,7 +296,18 @@ export class ConversionsComponent implements AfterViewInit {
               } | null> => {
                 if (!overview) return of(null);
                 const urls = pages.map(p => p.pageUrl).filter(Boolean);
-                const steps = urls.length >= 2 ? urls.slice(0, 6) : ['/', '/'];
+                const steps = funnelStepsFromPageUrls(urls);
+                if (steps.length === 0) {
+                  const labels = overview.trendData.map(t => t.date);
+                  const convSeries = overview.trendData.map(t => t.conversions);
+                  const metrics: ConversionMetric[] = conv.slice(0, 4).map((c, i) => ({
+                    label: c.type,
+                    value: c.count,
+                    change: 0,
+                    icon: this.metricIcon(c.type, i),
+                  }));
+                  return of({ metrics, funnel: [] as FunnelStep[], labels, conv: convSeries });
+                }
                 return this.api.funnels(site.siteId, steps, days).pipe(
                   map(funnel => ({ overview, conv, funnel })),
                   catchError(() => of({ overview, conv, funnel: [] as FunnelStepDto[] })),
@@ -306,12 +318,7 @@ export class ConversionsComponent implements AfterViewInit {
                       change: 0,
                       icon: this.metricIcon(c.type, i),
                     }));
-                    const fd: FunnelStep[] = funnel.map(f => ({
-                      label: f.step,
-                      visitors: f.entered,
-                      percentage: Math.round(f.conversionRate * 10) / 10,
-                      dropOff: Math.round(f.dropOffRate * 10) / 10,
-                    }));
+                    const fd = funnelDtoToDisplaySteps(funnel);
                     const labels = ov.trendData.map(t => t.date);
                     const convSeries = ov.trendData.map(t => t.conversions);
                     return { metrics, funnel: fd, labels, conv: convSeries };

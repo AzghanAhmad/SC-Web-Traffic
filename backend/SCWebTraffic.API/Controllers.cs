@@ -192,7 +192,10 @@ public sealed class CollectController(
         var ip = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "0.0.0.0";
         var ua = Request.Headers.UserAgent.ToString();
         var referrer = Request.Headers.Referer.ToString();
-        var result = await eventCollectionService.CollectAsync(request, ip, ua, referrer, cancellationToken);
+        var countryHint = Request.Headers["CF-IPCountry"].FirstOrDefault()
+            ?? Request.Headers["CloudFront-Viewer-Country"].FirstOrDefault()
+            ?? Request.Headers["True-Client-Country"].FirstOrDefault();
+        var result = await eventCollectionService.CollectAsync(request, ip, ua, referrer, cancellationToken, countryHint);
         return Ok(result);
     }
 }

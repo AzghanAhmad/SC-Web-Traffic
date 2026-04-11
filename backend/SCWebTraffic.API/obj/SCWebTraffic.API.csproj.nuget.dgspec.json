@@ -31,8 +31,8 @@
               "E:\\Projects\\Project 3 (B)\\project\\backend\\SCWebTraffic.Application\\SCWebTraffic.Application.csproj": {
                 "projectPath": "E:\\Projects\\Project 3 (B)\\project\\backend\\SCWebTraffic.Application\\SCWebTraffic.Application.csproj"
               },
-              "E:\\Projects\\Project 3 (B)\\project\\backend\\SCWebTraffic.Infrastructure\\SCWebTraffic.Infrastructure.csproj": {
-                "projectPath": "E:\\Projects\\Project 3 (B)\\project\\backend\\SCWebTraffic.Infrastructure\\SCWebTraffic.Infrastructure.csproj"
+              "e:\\Projects\\Project 3 (B)\\project\\backend\\SCWebTraffic.Infrastructure\\SCWebTraffic.Infrastructure.csproj": {
+                "projectPath": "e:\\Projects\\Project 3 (B)\\project\\backend\\SCWebTraffic.Infrastructure\\SCWebTraffic.Infrastructure.csproj"
               }
             }
           }
@@ -1197,14 +1197,14 @@
         }
       }
     },
-    "E:\\Projects\\Project 3 (B)\\project\\backend\\SCWebTraffic.Infrastructure\\SCWebTraffic.Infrastructure.csproj": {
+    "e:\\Projects\\Project 3 (B)\\project\\backend\\SCWebTraffic.Infrastructure\\SCWebTraffic.Infrastructure.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "E:\\Projects\\Project 3 (B)\\project\\backend\\SCWebTraffic.Infrastructure\\SCWebTraffic.Infrastructure.csproj",
+        "projectUniqueName": "e:\\Projects\\Project 3 (B)\\project\\backend\\SCWebTraffic.Infrastructure\\SCWebTraffic.Infrastructure.csproj",
         "projectName": "SCWebTraffic.Infrastructure",
-        "projectPath": "E:\\Projects\\Project 3 (B)\\project\\backend\\SCWebTraffic.Infrastructure\\SCWebTraffic.Infrastructure.csproj",
+        "projectPath": "e:\\Projects\\Project 3 (B)\\project\\backend\\SCWebTraffic.Infrastructure\\SCWebTraffic.Infrastructure.csproj",
         "packagesPath": "C:\\Users\\azgha\\.nuget\\packages\\",
-        "outputPath": "E:\\Projects\\Project 3 (B)\\project\\backend\\SCWebTraffic.Infrastructure\\obj\\",
+        "outputPath": "e:\\Projects\\Project 3 (B)\\project\\backend\\SCWebTraffic.Infrastructure\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
           "C:\\Users\\azgha\\AppData\\Roaming\\NuGet\\NuGet.Config",
@@ -1253,6 +1253,18 @@
             "Microsoft.EntityFrameworkCore.Design": {
               "include": "Runtime, Build, Native, ContentFiles, Analyzers, BuildTransitive",
               "suppressParent": "All",
+              "target": "Package",
+              "version": "[9.0.0, )"
+            },
+            "Microsoft.Extensions.Caching.Memory": {
+              "target": "Package",
+              "version": "[9.0.0, )"
+            },
+            "Microsoft.Extensions.Http": {
+              "target": "Package",
+              "version": "[9.0.0, )"
+            },
+            "Microsoft.Extensions.Logging.Abstractions": {
               "target": "Package",
               "version": "[9.0.0, )"
             },

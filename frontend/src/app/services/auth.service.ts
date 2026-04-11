@@ -3,6 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { Observable, tap, throwError } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import type { AuthResultDto } from '../models/analytics.types';
+import { ActiveSiteService } from './active-site.service';
 
 export interface SessionUser {
   displayName: string;
@@ -62,6 +63,7 @@ function normalizeApiUtcString(iso: string): string {
 export class AuthService {
   private static readonly storageKey = 'scribecount_auth';
   private readonly http = inject(HttpClient);
+  private readonly activeSite = inject(ActiveSiteService);
 
   readonly user = signal<SessionUser | null>(null);
   private readonly accessToken = signal<string | null>(null);
@@ -202,6 +204,7 @@ export class AuthService {
     this.accessToken.set(null);
     this.expiresAtUtc.set(null);
     localStorage.removeItem(AuthService.storageKey);
+    this.activeSite.clear();
   }
 
   login(email: string, password: string): Observable<AuthResultDto> {

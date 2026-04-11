@@ -47,6 +47,14 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 
 builder.Services.AddAuthorization();
+var corsOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
+                  ?? Array.Empty<string>();
+var corsOriginsTrimmed = corsOrigins
+    .Where(static o => !string.IsNullOrWhiteSpace(o))
+    .Select(static o => o.Trim().TrimEnd('/'))
+    .Distinct(StringComparer.OrdinalIgnoreCase)
+    .ToArray();
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("Frontend", policy =>
@@ -70,6 +78,12 @@ builder.Services.AddCors(options =>
                         return false;
                     }
                 })
+                .AllowAnyHeader()
+                .AllowAnyMethod();
+        }
+        else if (corsOriginsTrimmed.Length > 0)
+        {
+            policy.WithOrigins(corsOriginsTrimmed)
                 .AllowAnyHeader()
                 .AllowAnyMethod();
         }

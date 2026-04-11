@@ -7,6 +7,7 @@ import { OutlineIconComponent } from '../../shared/outline-icon/outline-icon.com
 import { ActiveSiteService } from '../../services/active-site.service';
 import { TrafficApiService } from '../../services/traffic-api.service';
 import { httpErrorMessage, timeRangeToDays } from '../../utils/analytics.helpers';
+import { funnelDtoToDisplaySteps } from '../../utils/funnel.helpers';
 import type { FunnelStepDto, PagePointDto } from '../../models/analytics.types';
 
 interface FunnelBuilderStep {
@@ -52,7 +53,7 @@ interface FunnelBuilderStep {
                   <option [value]="page">{{ page }}</option>
                 }
               </select>
-              <button class="step-remove" type="button" *ngIf="selectedSteps().length > 2" (click)="removeStep(i)" aria-label="Remove step">
+              <button class="step-remove" type="button" *ngIf="selectedSteps().length > 1" (click)="removeStep(i)" aria-label="Remove step">
                 <app-outline-icon name="x" size="sm"></app-outline-icon>
               </button>
             </div>
@@ -319,11 +320,15 @@ export class FunnelsComponent {
         const list = urls.length ? urls : ['/'];
         this.availablePages.set(list);
         const first = list[0];
-        const second = list[1] ?? list[0];
-        this.selectedSteps.set([
-          { id: 1, page: first, visitors: 0, conversion: 0, dropOff: 0 },
-          { id: 2, page: second, visitors: 0, conversion: 0, dropOff: 0 },
-        ]);
+        if (list.length === 1) {
+          this.selectedSteps.set([{ id: 1, page: first, visitors: 0, conversion: 0, dropOff: 0 }]);
+        } else {
+          const second = list[1];
+          this.selectedSteps.set([
+            { id: 1, page: first, visitors: 0, conversion: 0, dropOff: 0 },
+            { id: 2, page: second, visitors: 0, conversion: 0, dropOff: 0 },
+          ]);
+        }
       });
   }
 
@@ -339,6 +344,7 @@ export class FunnelsComponent {
 
   removeStep(index: number) {
     const steps = [...this.selectedSteps()];
+    if (steps.length <= 1) return;
     steps.splice(index, 1);
     this.selectedSteps.set(steps);
     this.analyzed.set(false);
@@ -355,11 +361,15 @@ export class FunnelsComponent {
   resetFunnel() {
     const pages = this.availablePages();
     const a = pages[0] ?? '/';
-    const b = pages[1] ?? a;
-    this.selectedSteps.set([
-      { id: 1, page: a, visitors: 0, conversion: 0, dropOff: 0 },
-      { id: 2, page: b, visitors: 0, conversion: 0, dropOff: 0 },
-    ]);
+    if (pages.length <= 1) {
+      this.selectedSteps.set([{ id: 1, page: a, visitors: 0, conversion: 0, dropOff: 0 }]);
+    } else {
+      const b = pages[1];
+      this.selectedSteps.set([
+        { id: 1, page: a, visitors: 0, conversion: 0, dropOff: 0 },
+        { id: 2, page: b, visitors: 0, conversion: 0, dropOff: 0 },
+      ]);
+    }
     this.analyzed.set(false);
   }
 
@@ -384,12 +394,13 @@ export class FunnelsComponent {
         }
         this.loadError.set('');
         const funnel = result.funnel;
-        const results: FunnelBuilderStep[] = funnel.map((f, idx) => ({
+        const display = funnelDtoToDisplaySteps(funnel);
+        const results: FunnelBuilderStep[] = display.map((d, idx) => ({
           id: idx + 1,
-          page: f.step,
-          visitors: f.entered,
-          conversion: Math.min(100, Math.round(f.conversionRate * 10) / 10),
-          dropOff: Math.round(f.dropOffRate * 10) / 10,
+          page: d.label,
+          visitors: d.visitors,
+          conversion: d.percentage,
+          dropOff: d.dropOff,
         }));
         this.funnelResults.set(results);
         const first = funnel[0]?.entered ?? 0;

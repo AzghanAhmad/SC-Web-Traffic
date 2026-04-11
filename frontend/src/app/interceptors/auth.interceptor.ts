@@ -1,5 +1,7 @@
-import { HttpInterceptorFn } from '@angular/common/http';
+import { HttpErrorResponse, HttpInterceptorFn } from '@angular/common/http';
 import { inject } from '@angular/core';
+import { Router } from '@angular/router';
+import { catchError, throwError } from 'rxjs';
 import { AuthService } from '../services/auth.service';
 
 /** Pathname for `/api/...` whether `req.url` is relative or absolute (e.g. after a base URL). */
@@ -25,14 +27,19 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
   }
 
   const auth = inject(AuthService);
+  const router = inject(Router);
   const token = auth.getBearerToken();
-  if (!token) {
-    return next(req);
-  }
+  const outReq = token
+    ? req.clone({ setHeaders: { Authorization: `Bearer ${token}` } })
+    : req;
 
-  return next(
-    req.clone({
-      setHeaders: { Authorization: `Bearer ${token}` },
-    })
+  return next(outReq).pipe(
+    catchError((err: unknown) => {
+      if (err instanceof HttpErrorResponse && err.status === 401) {
+        auth.clearSession();
+        void router.navigate(['/login'], { replaceUrl: true });
+      }
+      return throwError(() => err);
+    }),
   );
 };

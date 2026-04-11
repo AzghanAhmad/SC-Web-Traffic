@@ -6,7 +6,6 @@ import { finalize } from 'rxjs/operators';
 import { AuthService } from '../../services/auth.service';
 import { ActiveSiteService } from '../../services/active-site.service';
 import { httpErrorMessage } from '../../utils/analytics.helpers';
-import { trackGaEvent } from '../../utils/ga-events';
 
 @Component({
   selector: 'app-top-bar',
@@ -442,11 +441,6 @@ export class TopBarComponent {
   onSiteSwitch(siteId: string): void {
     if (!siteId || siteId === this.activeSite.site()?.siteId) return;
     this.activeSite.selectSiteById(siteId);
-    const s = this.activeSite.site();
-    trackGaEvent('select_property', {
-      event_category: 'engagement',
-      event_label: s?.domain ?? siteId,
-    });
   }
 
   onTrackSite(): void {
@@ -460,10 +454,6 @@ export class TopBarComponent {
     this.activeSite.register(url).pipe(finalize(() => this.registering.set(false))).subscribe({
       next: () => {
         this.siteUrlInput = '';
-        trackGaEvent('track_new_site', {
-          event_category: 'engagement',
-          event_label: url.slice(0, 120),
-        });
         void this.router.navigateByUrl('/');
       },
       error: err => this.siteError.set(httpErrorMessage(err)),

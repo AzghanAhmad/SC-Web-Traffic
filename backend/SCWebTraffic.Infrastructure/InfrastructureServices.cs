@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 using SCWebTraffic.Application;
 using SCWebTraffic.Domain;
+using SCWebTraffic.Infrastructure.Geo;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
@@ -119,14 +120,15 @@ public sealed class TokenService(IConfiguration configuration) : ITokenService
     }
 }
 
-public sealed class EventCollectionService(ITrafficDbContext db) : IEventCollectionService
+public sealed class EventCollectionService(ITrafficDbContext db, IIpCountryResolver countryResolver) : IEventCollectionService
 {
     public async Task<EventCollectionResult> CollectAsync(
         CollectEventRequest request,
         string ipAddress,
         string userAgent,
         string? referrer,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? countryCodeHint = null)
     {
         var siteExists = await db.Sites.AnyAsync(x => x.SiteId == request.SiteId, cancellationToken);
         if (!siteExists) throw new InvalidOperationException("Invalid siteId.");
@@ -159,6 +161,10 @@ public sealed class EventCollectionService(ITrafficDbContext db) : IEventCollect
 
         if (session is null || session.LastActivityAt < DateTime.UtcNow.AddMinutes(-30))
         {
+            var metaCountry = TryMetadataCountryCode(request.Metadata);
+            var country = await countryResolver
+                .ResolveAsync(ipAddress, countryCodeHint, metaCountry, cancellationToken)
+                .ConfigureAwait(false);
             session = new Session
             {
                 SiteId = request.SiteId,
@@ -166,7 +172,7 @@ public sealed class EventCollectionService(ITrafficDbContext db) : IEventCollect
                 StartedAt = now,
                 LastActivityAt = now,
                 DeviceType = DetectDevice(userAgent),
-                Country = "Unknown",
+                Country = country,
                 Referrer = referrer ?? string.Empty,
                 Source = InferSource(referrer),
                 Medium = string.IsNullOrWhiteSpace(referrer) ? "none" : "referral",
@@ -236,6 +242,16 @@ public sealed class EventCollectionService(ITrafficDbContext db) : IEventCollect
         return new EventCollectionResult(evt.EventId, session.SessionId, visitor.VisitorId);
     }
 
+    private static string? TryMetadataCountryCode(Dictionary<string, object?>? metadata)
+    {
+        if (metadata is null) return null;
+        if (metadata.TryGetValue("countryCode", out var a) && a?.ToString() is { Length: >= 2 } c1)
+            return c1[..2];
+        if (metadata.TryGetValue("country", out var b) && b?.ToString() is { Length: >= 2 } c2)
+            return c2[..2];
+        return null;
+    }
+
     private static string BuildAnonymousId(string ipAddress, string userAgent) => $"{ipAddress}:{userAgent}".GetHashCode().ToString("X");
     private static DeviceType DetectDevice(string userAgent) => userAgent.ToLowerInvariant() switch
     {
@@ -270,14 +286,46 @@ public sealed class AnalyticsService(ITrafficDbContext db) : IAnalyticsService
     {
         var since = DateTime.UtcNow.AddDays(-days);
         var sessions = db.Sessions.Where(x => x.SiteId == siteId && x.StartedAt >= since);
-        var events = db.Events.Where(x => x.SiteId == siteId && x.Timestamp >= since);
 
         var visitors = await db.Visitors.CountAsync(x => x.SiteId == siteId && x.LastSeenAt >= since, cancellationToken);
         var sessionsCount = await sessions.CountAsync(cancellationToken);
         var conversionsCount = await db.Conversions.CountAsync(x => x.SiteId == siteId && x.Timestamp >= since, cancellationToken);
-        var engagementRate = sessionsCount == 0
-            ? 0
-            : (double)await events.CountAsync(x => x.EventType == EventType.Click || x.EventType == EventType.Scroll, cancellationToken) / sessionsCount;
+
+        // 0–1: share of sessions with meaningful interaction (first-party scroll/click, depth, multi-page, dwell, or conversion).
+        double engagementRate = 0;
+        if (sessionsCount > 0)
+        {
+            var engagedIds = await db.Events
+                .AsNoTracking()
+                .Where(x => x.SiteId == siteId && x.Timestamp >= since
+                            && (x.EventType == EventType.Click || x.EventType == EventType.Scroll))
+                .Select(x => x.SessionId)
+                .Distinct()
+                .ToListAsync(cancellationToken);
+
+            var engaged = engagedIds.ToHashSet();
+
+            var pageAgg = await db.PageViews
+                .AsNoTracking()
+                .Where(x => x.SiteId == siteId && x.Timestamp >= since)
+                .GroupBy(x => x.SessionId)
+                .Select(g => new { Sid = g.Key, Cnt = g.Count(), MaxDwell = g.Max(p => p.TimeOnPage) })
+                .ToListAsync(cancellationToken);
+            foreach (var row in pageAgg)
+            {
+                if (row.Cnt >= 2 || row.MaxDwell >= 10) engaged.Add(row.Sid);
+            }
+
+            var conversionSessions = await db.Conversions
+                .AsNoTracking()
+                .Where(x => x.SiteId == siteId && x.Timestamp >= since)
+                .Select(x => x.SessionId)
+                .Distinct()
+                .ToListAsync(cancellationToken);
+            foreach (var sid in conversionSessions) engaged.Add(sid);
+
+            engagementRate = (double)engaged.Count / sessionsCount;
+        }
 
         var visitorDays = await db.Visitors
             .Where(x => x.SiteId == siteId && x.LastSeenAt >= since)
@@ -452,27 +500,98 @@ public sealed class FunnelService(ITrafficDbContext db) : IFunnelService
 {
     public async Task<IReadOnlyList<FunnelStepDto>> CalculateAsync(Guid siteId, IReadOnlyList<string> steps, int days, CancellationToken cancellationToken = default)
     {
-        if (steps.Count == 0) return [];
-        var since = DateTime.UtcNow.AddDays(-days);
-        var events = await db.Events.Where(x => x.SiteId == siteId && x.Timestamp >= since).ToListAsync(cancellationToken);
-        var result = new List<FunnelStepDto>(steps.Count);
+        var raw = steps.Where(s => !string.IsNullOrWhiteSpace(s)).Select(s => s.Trim()).ToList();
+        if (raw.Count == 0) return [];
 
-        var previousCompleted = events.Select(x => x.SessionId).Distinct().Count();
-        foreach (var step in steps)
+        var funnelSteps = new List<string>();
+        foreach (var s in raw)
         {
-            var entered = previousCompleted;
-            var completedSessions = events
-                .Where(x => x.EventName.Equals(step, StringComparison.OrdinalIgnoreCase) || x.PageUrl.Contains(step, StringComparison.OrdinalIgnoreCase))
-                .Select(x => x.SessionId)
-                .Distinct()
-                .Count();
-            var conversion = entered == 0 ? 0 : (double)completedSessions / entered * 100;
-            var drop = 100 - conversion;
-            result.Add(new FunnelStepDto(step, entered, completedSessions, Math.Round(conversion, 2), Math.Round(drop, 2)));
-            previousCompleted = completedSessions;
+            if (funnelSteps.Count == 0 ||
+                !string.Equals(funnelSteps[^1], s, StringComparison.OrdinalIgnoreCase))
+                funnelSteps.Add(s);
+        }
+
+        if (funnelSteps.Count == 0) return [];
+
+        var since = DateTime.UtcNow.AddDays(-days);
+        var pageHits = await db.PageViews
+            .AsNoTracking()
+            .Where(x => x.SiteId == siteId && x.Timestamp >= since)
+            .OrderBy(x => x.SessionId)
+            .ThenBy(x => x.Timestamp)
+            .Select(x => new { x.SessionId, x.PageUrl })
+            .ToListAsync(cancellationToken);
+
+        var chains = pageHits
+            .GroupBy(x => x.SessionId)
+            .ToDictionary(g => g.Key, g => g.Select(x => x.PageUrl).ToList());
+
+        var universe = chains.Keys.ToHashSet();
+        if (universe.Count == 0)
+        {
+            return funnelSteps
+                .Select(st => new FunnelStepDto(st, 0, 0, 0, 0))
+                .ToList();
+        }
+
+        var completedByStep = new int[funnelSteps.Count];
+        for (var k = 0; k < funnelSteps.Count; k++)
+        {
+            var prefixLen = k + 1;
+            var n = 0;
+            foreach (var sid in universe)
+            {
+                if (!chains.TryGetValue(sid, out var urls)) continue;
+                if (MatchesOrderedPrefix(urls, funnelSteps, prefixLen))
+                    n++;
+            }
+
+            completedByStep[k] = n;
+        }
+
+        var totalSessions = universe.Count;
+        var result = new List<FunnelStepDto>(funnelSteps.Count);
+        for (var k = 0; k < funnelSteps.Count; k++)
+        {
+            var entered = k == 0 ? totalSessions : completedByStep[k - 1];
+            var completed = completedByStep[k];
+            var conversion = entered == 0 ? 0 : (double)completed / entered * 100;
+            var drop = entered == 0 ? 0 : (entered - completed) * 100.0 / entered;
+            result.Add(new FunnelStepDto(
+                funnelSteps[k],
+                entered,
+                completed,
+                Math.Round(conversion, 2),
+                Math.Round(drop, 2)));
         }
 
         return result;
+    }
+
+    private static bool MatchesOrderedPrefix(IReadOnlyList<string> urls, IReadOnlyList<string> funnelSteps, int stepCount)
+    {
+        if (stepCount <= 0 || stepCount > funnelSteps.Count) return false;
+        var u = 0;
+        for (var s = 0; s < stepCount; s++)
+        {
+            while (u < urls.Count && !UrlMatchesPage(urls[u], funnelSteps[s]))
+                u++;
+            if (u >= urls.Count) return false;
+            u++;
+        }
+
+        return true;
+    }
+
+    private static bool UrlMatchesPage(string pageUrl, string step)
+    {
+        if (string.IsNullOrEmpty(pageUrl) || string.IsNullOrEmpty(step)) return false;
+        if (string.Equals(pageUrl, step, StringComparison.OrdinalIgnoreCase)) return true;
+        if (pageUrl.Contains(step, StringComparison.OrdinalIgnoreCase)) return true;
+        if (!Uri.TryCreate(pageUrl, UriKind.Absolute, out var uri)) return false;
+        var path = uri.AbsolutePath;
+        if (string.Equals(path, step, StringComparison.OrdinalIgnoreCase)) return true;
+        return step.StartsWith('/') && path.Contains(step, StringComparison.OrdinalIgnoreCase);
     }
 }
 
@@ -568,6 +687,14 @@ public static class DependencyInjection
 
         services.AddDbContext<TrafficDbContext>(options =>
             options.UseMySql(connectionString, new MySqlServerVersion(new Version(8, 0, 36))));
+
+        services.AddMemoryCache();
+        services
+            .AddHttpClient(nameof(IpCountryResolver), client =>
+            {
+                client.Timeout = TimeSpan.FromSeconds(2);
+            });
+        services.AddSingleton<IIpCountryResolver, IpCountryResolver>();
 
         services.AddScoped<ITrafficDbContext>(sp => sp.GetRequiredService<TrafficDbContext>());
         services.AddScoped<ISchemaInitializer, SchemaInitializer>();
