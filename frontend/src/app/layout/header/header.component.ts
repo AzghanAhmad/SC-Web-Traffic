@@ -10,8 +10,12 @@ import { RouterModule } from '@angular/router';
     <header class="nav" [class.scrolled]="navScrolled">
       <div class="nav-inner">
         <a routerLink="/" class="nav-logo">
-          <span class="logo-mark"><svg viewBox="0 0 36 36" fill="none"><defs><linearGradient id="hdr-lg" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#60a5fa"/><stop offset="50%" stop-color="#818cf8"/><stop offset="100%" stop-color="#a78bfa"/></linearGradient></defs><rect width="36" height="36" rx="10" fill="url(#hdr-lg)" opacity="0.15"/><path d="M10 18L14 14L18 18L22 14" stroke="url(#hdr-lg)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M10 22L14 18L18 22L22 18" stroke="url(#hdr-lg)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" opacity="0.5"/></svg></span>
-          <span class="logo-text">ScribeCount</span>
+          <img
+            class="brand-logo-img"
+            src="/ScribeCount%20logo%20-%20promo%20tile%20large-01.jpg"
+            height="34"
+            alt="ScribeCount"
+          />
           <span class="logo-badge">Traffic</span>
         </a>
         <nav class="nav-links">
@@ -73,20 +77,13 @@ import { RouterModule } from '@angular/router';
       color: white;
     }
 
-    .logo-mark {
-      width: 32px;
-      height: 32px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .logo-mark svg { width: 100%; height: 100%; }
-
-    .logo-text {
-      font-weight: 700;
-      font-size: 1.1rem;
-      letter-spacing: -0.02em;
+    .brand-logo-img {
+      display: block;
+      height: 34px;
+      width: auto;
+      max-width: min(220px, 50vw);
+      object-fit: contain;
+      object-position: left center;
     }
 
     .logo-badge {

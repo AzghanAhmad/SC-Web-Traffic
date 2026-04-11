@@ -20,21 +20,12 @@ import { httpErrorMessage } from '../../utils/analytics.helpers';
           </svg>
         </button>
         <a class="brand" routerLink="/">
-          <span class="logo-mark">
-            <svg viewBox="0 0 36 36" fill="none" aria-hidden="true">
-              <defs>
-                <linearGradient id="topbarLogoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                  <stop offset="0%" stop-color="#60a5fa"/>
-                  <stop offset="50%" stop-color="#818cf8"/>
-                  <stop offset="100%" stop-color="#a78bfa"/>
-                </linearGradient>
-              </defs>
-              <rect width="36" height="36" rx="10" fill="url(#topbarLogoGrad)" opacity="0.15"/>
-              <path d="M10 18L14 14L18 18L22 14" stroke="url(#topbarLogoGrad)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-              <path d="M10 22L14 18L18 22L22 18" stroke="url(#topbarLogoGrad)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" opacity="0.5"/>
-            </svg>
-          </span>
-          <span class="logo-text">ScribeCount</span>
+          <img
+            class="brand-logo-img"
+            src="/ScribeCount%20logo%20-%20promo%20tile%20large-01.jpg"
+            height="36"
+            alt="ScribeCount"
+          />
           <span class="logo-badge">Traffic</span>
         </a>
       </div>
@@ -267,24 +258,14 @@ import { httpErrorMessage } from '../../utils/analytics.helpers';
       text-decoration: none;
     }
 
-    .logo-mark {
-      width: 32px;
-      height: 32px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex-shrink: 0;
-    }
-
-    .logo-mark svg {
-      width: 100%;
-      height: 100%;
-    }
-
-    .logo-text {
-      font-size: 16px;
-      font-weight: 700;
-      letter-spacing: -0.02em;
+    .brand-logo-img {
+      display: block;
+      height: 36px;
+      width: auto;
+      max-width: min(240px, 46vw);
+      object-fit: contain;
+      object-position: left center;
+      flex-shrink: 1;
     }
 
     .logo-badge {
