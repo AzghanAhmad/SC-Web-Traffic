@@ -181,6 +181,7 @@ public sealed class CollectController(
     IValidator<CollectEventRequest> validator) : ControllerBase
 {
     [HttpPost]
+    [HttpPost("/api/track")]
     [AllowAnonymous]
     [EnableRateLimiting("collect")]
     public async Task<ActionResult<EventCollectionResult>> Collect([FromBody] CollectEventRequest request, CancellationToken cancellationToken)
@@ -294,4 +295,72 @@ public sealed class TrafficController(
         if (!await OwnsSiteAsync(siteId, cancellationToken)) return Forbid();
         return Ok(await heatmapService.GetPageHeatmapAsync(siteId, pageUrl, days, cancellationToken));
     }
+
+    [HttpGet("live")]
+    public async Task<ActionResult<LiveStatsDto>> LiveStats([FromQuery] Guid siteId, CancellationToken cancellationToken = default)
+    {
+        if (!await OwnsSiteAsync(siteId, cancellationToken)) return Forbid();
+
+        var since = DateTime.UtcNow.AddMinutes(-30);
+        var today = DateTime.UtcNow.Date;
+
+        var activeVisitors = await db.Sessions
+            .Where(s => s.SiteId == siteId && s.LastActivityAt >= since)
+            .Select(s => s.VisitorId)
+            .Distinct()
+            .CountAsync(cancellationToken);
+
+        var todayEvents = await db.Events
+            .Where(e => e.SiteId == siteId && e.Timestamp >= today)
+            .CountAsync(cancellationToken);
+
+        var todayClicks = await db.Events
+            .Where(e => e.SiteId == siteId && e.Timestamp >= today && e.EventType == EventType.Click)
+            .CountAsync(cancellationToken);
+
+        var todayPageViews = await db.PageViews
+            .Where(p => p.SiteId == siteId && p.Timestamp >= today)
+            .CountAsync(cancellationToken);
+
+        var todayConversions = await db.Conversions
+            .Where(c => c.SiteId == siteId && c.Timestamp >= today)
+            .CountAsync(cancellationToken);
+
+        var totalSessions = await db.Sessions
+            .Where(s => s.SiteId == siteId && s.StartedAt >= today)
+            .CountAsync(cancellationToken);
+
+        // Engagement = sessions that had at least one click event today
+        var clickSessionIds = await db.Events
+            .Where(e => e.SiteId == siteId && e.Timestamp >= today && e.EventType == EventType.Click)
+            .Select(e => e.SessionId)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
+        var convSessionIds = await db.Conversions
+            .Where(c => c.SiteId == siteId && c.Timestamp >= today)
+            .Select(c => c.SessionId)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
+        var engagedCount = clickSessionIds.Union(convSessionIds).Count();
+        var engagementRate = totalSessions > 0 ? Math.Round((double)engagedCount / totalSessions * 100, 1) : 0;
+
+        return Ok(new LiveStatsDto(
+            ActiveVisitors: activeVisitors,
+            TodayEvents: todayEvents,
+            TodayClicks: todayClicks,
+            TodayPageViews: todayPageViews,
+            TodayConversions: todayConversions,
+            EngagementRate: engagementRate
+        ));
+    }
 }
+
+public sealed record LiveStatsDto(
+    int ActiveVisitors,
+    int TodayEvents,
+    int TodayClicks,
+    int TodayPageViews,
+    int TodayConversions,
+    double EngagementRate);

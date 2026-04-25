@@ -71,6 +71,13 @@ interface NavItem {
                 <path d="M18 9h3v8h-3z"></path>
                 <path d="M8 20h3"></path>
               </svg>
+              <svg *ngSwitchCase="'websites'" viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="12" cy="12" r="9"></circle>
+                <path d="M3.6 9h16.8"></path>
+                <path d="M3.6 15h16.8"></path>
+                <path d="M12 3a14 14 0 0 1 0 18"></path>
+                <path d="M12 3a14 14 0 0 0 0 18"></path>
+              </svg>
               <svg *ngSwitchCase="'settings'" viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"></path>
                 <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
@@ -318,6 +325,7 @@ export class SidebarComponent {
 
   navItems: NavItem[] = [
     { label: 'Overview', icon: 'home', route: '/' },
+    { label: 'Websites', icon: 'websites', route: '/websites' },
     { label: 'Traffic Analytics', icon: 'chart', route: '/traffic' },
     { label: 'Conversions', icon: 'conversion', route: '/conversions' },
     { label: 'Funnels', icon: 'funnels', route: '/funnels' },

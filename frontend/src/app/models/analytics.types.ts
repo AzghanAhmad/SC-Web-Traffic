@@ -26,6 +26,8 @@ export interface PagePointDto {
   pageUrl: string;
   views: number;
   avgTimeOnPageSeconds: number;
+  bounceRate: number;
+  conversions: number;
 }
 
 export interface ConversionPointDto {
@@ -174,4 +176,21 @@ export interface Referrer {
   visits: number;
   engagement: string;
   conversion: number;
+}
+
+export interface LiveStatsDto {
+  activeVisitors: number;
+  todayEvents: number;
+  todayClicks: number;
+  todayPageViews: number;
+  todayConversions: number;
+  engagementRate: number;
+}
+
+export interface CollectEventRequest {
+  siteId: string;
+  eventType: number; // 1=PageView 2=Click 3=Scroll 4=Conversion
+  pageUrl: string;
+  metadata?: Record<string, unknown>;
+  timestamp?: string;
 }

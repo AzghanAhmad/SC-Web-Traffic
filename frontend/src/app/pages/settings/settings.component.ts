@@ -710,16 +710,18 @@ export class SettingsComponent implements OnInit {
 
   trackerInstallSnippet(): string {
     const id = this.activeSite.site()?.siteId ?? 'YOUR_SITE_ID_FROM_TRACK';
-    const endpoint = this.collectUrl();
     const src = this.trackerScriptSrc();
     return `<script>
-  window.scribeCountTracking = {
-    siteId: '${id}',
-    endpoint: '${endpoint}',
-    trackSpa: true
-  };
+  window.scribeCountTracking = { siteId: '${id}' };
 </script>
-<script src="${src}" defer></script>`;
+<script src="${src}" defer></script>
+<script>
+  tracker.init('${id}', { endpoint: '${this.collectUrl()}' });
+  // Example business events:
+  // tracker.track('add_to_cart', { productId: 'p1', price: 999 });
+  // tracker.track('checkout_started');
+  // tracker.track('order_completed', { orderId: 'o1', value: 999 });
+</script>`;
   }
 
   collectSampleJson(): string {

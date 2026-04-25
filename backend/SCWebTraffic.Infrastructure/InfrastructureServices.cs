@@ -276,7 +276,15 @@ public sealed class EventCollectionService(ITrafficDbContext db, IIpCountryResol
     private static ConversionType ParseConversionType(Dictionary<string, object?>? metadata)
     {
         var value = metadata?.TryGetValue("type", out var t) == true ? t?.ToString() : null;
-        return Enum.TryParse<ConversionType>(value, true, out var parsed) ? parsed : ConversionType.Signup;
+        if (Enum.TryParse<ConversionType>(value, true, out var parsed)) return parsed;
+
+        var eventName = metadata?.TryGetValue("eventName", out var n) == true ? n?.ToString() : null;
+        return eventName?.Trim().ToLowerInvariant() switch
+        {
+            "checkout_started" => ConversionType.BuyClick,
+            "order_completed" => ConversionType.Purchase,
+            _ => ConversionType.Signup,
+        };
     }
 }
 
@@ -400,16 +408,54 @@ public sealed class AnalyticsService(ITrafficDbContext db) : IAnalyticsService
     public async Task<IReadOnlyList<PagePoint>> GetPagesAsync(Guid siteId, int days, CancellationToken cancellationToken = default)
     {
         var since = DateTime.UtcNow.AddDays(-days);
-        // Project only DB-translatable shapes; Math.Round + record ctor often break Pomelo/MySQL.
-        var rows = await db.PageViews
+        // Load pageviews in one pass to compute views, avg time, and bounce/session metrics.
+        var pageViews = await db.PageViews
             .AsNoTracking()
             .Where(x => x.SiteId == siteId && x.Timestamp >= since)
-            .GroupBy(x => x.PageUrl)
-            .Select(g => new { PageUrl = g.Key, Views = g.Count(), AvgSeconds = g.Average(x => x.TimeOnPage) })
-            .OrderByDescending(x => x.Views)
             .ToListAsync(cancellationToken);
+
+        var conversionRows = await db.Events
+            .AsNoTracking()
+            .Where(x => x.SiteId == siteId && x.Timestamp >= since && x.EventType == EventType.Conversion)
+            .Select(x => x.PageUrl)
+            .ToListAsync(cancellationToken);
+        var conversionsByPage = conversionRows
+            .Where(p => !string.IsNullOrWhiteSpace(p))
+            .GroupBy(p => p, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.Count(), StringComparer.OrdinalIgnoreCase);
+
+        var pageViewCountBySession = pageViews
+            .GroupBy(p => p.SessionId)
+            .ToDictionary(g => g.Key, g => g.Count());
+
+        var rows = pageViews
+            .Where(p => !string.IsNullOrWhiteSpace(p.PageUrl))
+            .GroupBy(p => p.PageUrl, StringComparer.OrdinalIgnoreCase)
+            .Select(g =>
+            {
+                var distinctSessions = g.Select(x => x.SessionId).Distinct().ToList();
+                var enteredSessions = distinctSessions.Count;
+                var bouncedSessions = distinctSessions.Count(sid => pageViewCountBySession.GetValueOrDefault(sid) <= 1);
+                var bounceRate = enteredSessions == 0 ? 0 : (double)bouncedSessions * 100.0 / enteredSessions;
+                return new
+                {
+                    PageUrl = g.Key,
+                    Views = g.Count(),
+                    AvgSeconds = g.Average(x => x.TimeOnPage),
+                    BounceRate = bounceRate,
+                    Conversions = conversionsByPage.GetValueOrDefault(g.Key, 0),
+                };
+            })
+            .OrderByDescending(x => x.Views)
+            .ToList();
+
         return rows
-            .Select(x => new PagePoint(x.PageUrl, x.Views, Math.Round(x.AvgSeconds, 2)))
+            .Select(x => new PagePoint(
+                x.PageUrl,
+                x.Views,
+                Math.Round(x.AvgSeconds, 2),
+                Math.Round(x.BounceRate, 1),
+                x.Conversions))
             .ToList();
     }
 
@@ -466,33 +512,90 @@ public sealed class AnalyticsService(ITrafficDbContext db) : IAnalyticsService
     public async Task<IReadOnlyList<ReferrerPoint>> GetReferrersAsync(Guid siteId, int days, int take = 20, CancellationToken cancellationToken = default)
     {
         var since = DateTime.UtcNow.AddDays(-days);
-        // Load referrer strings only, aggregate in memory — avoids Pomelo/MySQL edge cases on GROUP BY long VARCHAR.
-        var referrerStrings = await db.Sessions
+        // Prefer explicit Referrer URL host; fall back to Source/direct so the table is never blank.
+        var rows = await db.Sessions
             .AsNoTracking()
             .Where(x => x.SiteId == siteId && x.StartedAt >= since)
-            .Select(x => x.Referrer)
+            .Select(x => new { x.Referrer, x.Source })
             .ToListAsync(cancellationToken);
-        var rows = referrerStrings
-            .Where(r => !string.IsNullOrWhiteSpace(r))
-            .GroupBy(r => r, StringComparer.Ordinal)
-            .Select(g => (Referrer: g.Key, Visits: g.Count()))
+
+        var grouped = rows
+            .Select(x => NormalizeReferrerLabel(x.Referrer, x.Source))
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .GroupBy(x => x, StringComparer.OrdinalIgnoreCase)
+            .Select(g => new { Referrer = g.Key, Visits = g.Count() })
             .OrderByDescending(x => x.Visits)
             .Take(take)
             .ToList();
-        return rows.Select(x => new ReferrerPoint(x.Referrer, x.Visits)).ToList();
+
+        return grouped
+            .Select(x => new ReferrerPoint(x.Referrer, x.Visits))
+            .ToList();
+    }
+
+    private static string NormalizeReferrerLabel(string? referrer, string? source)
+    {
+        // Real referrer URL -> host
+        if (!string.IsNullOrWhiteSpace(referrer) &&
+            Uri.TryCreate(referrer.Trim(), UriKind.Absolute, out var uri) &&
+            !string.IsNullOrWhiteSpace(uri.Host))
+        {
+            return uri.Host.ToLowerInvariant();
+        }
+
+        // Fallback from session.Source (already inferred in collection service)
+        var s = (source ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(s)) return "direct";
+        if (s.Equals("none", StringComparison.OrdinalIgnoreCase)) return "direct";
+        if (s.Equals("direct", StringComparison.OrdinalIgnoreCase)) return "direct";
+        if (s.Equals("localhost", StringComparison.OrdinalIgnoreCase)) return "localhost";
+        if (s.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase)) return "localhost";
+
+        if (Uri.TryCreate(s.StartsWith("http", StringComparison.OrdinalIgnoreCase) ? s : $"https://{s}", UriKind.Absolute, out var srcUri) &&
+            !string.IsNullOrWhiteSpace(srcUri.Host))
+        {
+            return srcUri.Host.ToLowerInvariant();
+        }
+
+        return s.ToLowerInvariant();
     }
 
     public async Task<IReadOnlyList<CampaignPoint>> GetCampaignsAsync(Guid siteId, int days, CancellationToken cancellationToken = default)
     {
         var since = DateTime.UtcNow.AddDays(-days);
-        var rows = await db.Sessions
+        var sessionRows = await db.Sessions
             .AsNoTracking()
             .Where(x => x.SiteId == siteId && x.StartedAt >= since && !string.IsNullOrWhiteSpace(x.Campaign))
-            .GroupBy(x => x.Campaign)
-            .Select(g => new { Name = g.Key, Visits = g.Count() })
-            .OrderByDescending(x => x.Visits)
             .ToListAsync(cancellationToken);
-        return rows.Select(x => new CampaignPoint(x.Name, x.Visits, 0)).ToList();
+
+        var conversionSessions = await db.Conversions
+            .AsNoTracking()
+            .Where(x => x.SiteId == siteId && x.Timestamp >= since)
+            .Select(x => x.SessionId)
+            .ToListAsync(cancellationToken);
+
+        var campaignBySession = sessionRows
+            .GroupBy(x => x.SessionId)
+            .ToDictionary(g => g.Key, g => g.First().Campaign);
+
+        var conversionByCampaign = conversionSessions
+            .Select(sid => campaignBySession.TryGetValue(sid, out var campaign) ? campaign : null)
+            .Where(c => !string.IsNullOrWhiteSpace(c))
+            .GroupBy(c => c!, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.Count(), StringComparer.OrdinalIgnoreCase);
+
+        var rows = sessionRows
+            .GroupBy(x => x.Campaign, StringComparer.OrdinalIgnoreCase)
+            .Select(g => new
+            {
+                Name = g.Key,
+                Visits = g.Count(),
+                Conversions = conversionByCampaign.GetValueOrDefault(g.Key, 0),
+            })
+            .OrderByDescending(x => x.Visits)
+            .ToList();
+
+        return rows.Select(x => new CampaignPoint(x.Name, x.Visits, x.Conversions)).ToList();
     }
 }
 

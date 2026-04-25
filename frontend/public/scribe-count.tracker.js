@@ -1,42 +1,76 @@
 /**
- * ScribeCount first-party tracker — page views, scroll milestones, clicks (heatmap + engagement),
- * and optional conversions. No third-party analytics.
+ * ScribeCount first-party tracker SDK.
  *
- *   window.scribeCountTracking = {
- *     siteId: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx',
- *     endpoint: 'https://your-host/api/collect',
- *     trackSpa: true,
- *     trackScroll: true,
- *     trackClicks: true,
- *     maxClicksPerPage: 8
- *   };
+ * Usage:
+ *   <script src="https://yourdomain.com/scribe-count.tracker.js"></script>
+ *   <script>
+ *     tracker.init('SITE_ID_GUID', { endpoint: 'https://yourdomain.com/api/collect' });
+ *     tracker.identify('user_123'); // optional
+ *     tracker.track('page_view');
+ *     tracker.track('add_to_cart', { productId: 'p1', price: 999 });
+ *     tracker.track('checkout_started');
+ *     tracker.track('order_completed', { value: 999 });
+ *   </script>
  *
- * Conversions from your site (newsletter, buy button, etc.):
- *   window.scribeCountConversion({ type: 'Signup' });           // or BuyClick, Purchase
- *   window.scribeCountConversion({ type: 'Purchase', value: 4.99 });
+ * Supported core events:
+ * - page_view
+ * - ad_click
+ * - add_to_wishlist
+ * - add_to_cart
+ * - remove_from_cart
+ * - checkout_started
+ * - order_completed
  */
 (function () {
   'use strict';
 
-  var cfg = window.scribeCountTracking;
-  if (!cfg || !cfg.siteId || !cfg.endpoint) {
-    if (typeof console !== 'undefined' && console.warn) {
-      console.warn('[ScribeCount] Missing window.scribeCountTracking.siteId or .endpoint');
-    }
-    return;
-  }
+  var EVENT_MAP = {
+    page_view: { eventType: 1 },
+    ad_click: { eventType: 2 },
+    add_to_wishlist: { eventType: 2 },
+    add_to_cart: { eventType: 2 },
+    remove_from_cart: { eventType: 2 },
+    checkout_started: { eventType: 4, conversionType: 'BuyClick' },
+    order_completed: { eventType: 4, conversionType: 'Purchase' },
+    scroll_depth: { eventType: 3 },
+    click: { eventType: 2 },
+  };
 
-  var siteId = String(cfg.siteId);
-  var endpoint = String(cfg.endpoint).replace(/\/$/, '');
-  var trackSpa = cfg.trackSpa !== false;
-  var trackScroll = cfg.trackScroll !== false;
-  var trackClicks = cfg.trackClicks !== false;
-  var maxClicks = typeof cfg.maxClicksPerPage === 'number' ? cfg.maxClicksPerPage : 8;
-  var debug = !!cfg.debug;
+  var state = {
+    siteId: null,
+    endpoint: '/api/collect',
+    trackSpa: true,
+    trackScroll: true,
+    trackClicks: true,
+    maxClicksPerPage: 8,
+    debug: false,
+    identifiedUserId: null,
+    initialized: false,
+  };
 
   var milestonesHit = {};
   var clicksThisPage = 0;
   var scrollTicking = false;
+  var lastUrl = '';
+
+  function warn() {
+    if (!state.debug || typeof console === 'undefined' || !console.warn) return;
+    console.warn.apply(console, arguments);
+  }
+
+  function assignIfDefined(target, key, value) {
+    if (value !== undefined && value !== null) target[key] = value;
+  }
+
+  function normalizeEndpoint(endpoint) {
+    var raw = endpoint || '/api/collect';
+    return String(raw).replace(/\/$/, '');
+  }
+
+  function getPageUrl() {
+    var href = window.location.href;
+    return /^https?:\/\//i.test(href) ? href : '';
+  }
 
   function utmFromUrl() {
     try {
@@ -47,79 +81,81 @@
         if (v) m[k] = v;
       });
       return m;
-    } catch (e) {
+    } catch {
       return {};
     }
   }
 
-  function post(bodyObj) {
-    var body = JSON.stringify(bodyObj);
-    return fetch(endpoint, {
+  function postCollect(payload) {
+    return fetch(state.endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: body,
+      body: JSON.stringify(payload),
       mode: 'cors',
       credentials: 'omit',
       keepalive: true,
     }).catch(function (err) {
-      if (debug) console.warn('[ScribeCount] collect failed', err);
+      warn('[ScribeCount] collect failed', err);
     });
   }
 
-  function sendPageView() {
-    var href = window.location.href;
-    if (!/^https?:\/\//i.test(href)) return;
-    var meta = Object.assign({ title: document.title || '' }, utmFromUrl());
-    return post({
-      siteId: siteId,
-      eventType: 1,
-      pageUrl: href,
-      metadata: meta,
-      timestamp: null,
-    });
+  function normalizeConversionType(input) {
+    var raw = String(input || '').trim().toLowerCase();
+    if (!raw) return null;
+    if (raw === 'purchase' || raw === 'order_completed') return 'Purchase';
+    if (raw === 'buyclick' || raw === 'buy_click' || raw === 'checkout_started') return 'BuyClick';
+    if (raw === 'signup' || raw === 'sign_up' || raw === 'lead') return 'Signup';
+    return null;
   }
 
-  function sendScrollMilestone(depth) {
-    var href = window.location.href;
-    if (!/^https?:\/\//i.test(href)) return;
-    return post({
-      siteId: siteId,
-      eventType: 3,
-      pageUrl: href,
-      metadata: { scrollDepth: depth, x: 0, y: 0 },
+  function toPayload(eventName, data) {
+    var map = EVENT_MAP[eventName] || { eventType: 2 };
+    var metadata = Object.assign({}, data || {});
+    metadata.eventName = eventName;
+
+    if (eventName === 'page_view') {
+      metadata = Object.assign({ title: document.title || '' }, utmFromUrl(), metadata);
+    }
+
+    if (state.identifiedUserId && !metadata.userId) {
+      metadata.userId = state.identifiedUserId;
+    }
+
+    if (map.eventType === 4) {
+      var fromData = normalizeConversionType(metadata.type);
+      var fromMap = normalizeConversionType(map.conversionType);
+      metadata.type = fromData || fromMap || 'Signup';
+    }
+
+    var pageUrl = metadata.pageUrl || getPageUrl();
+    if (!pageUrl) return null;
+    delete metadata.pageUrl;
+
+    return {
+      siteId: state.siteId,
+      eventType: map.eventType,
+      pageUrl: pageUrl,
+      metadata: metadata,
       timestamp: null,
-    });
+    };
   }
 
-  function sendClick(ev) {
-    if (clicksThisPage >= maxClicks) return;
-    clicksThisPage++;
-    var href = window.location.href;
-    if (!/^https?:\/\//i.test(href)) return;
-    return post({
-      siteId: siteId,
-      eventType: 2,
-      pageUrl: href,
-      metadata: {
-        x: Math.round(ev.clientX || 0),
-        y: Math.round(ev.clientY || 0),
-        scrollDepth: Math.round(scrollPercent() || 0),
-      },
-      timestamp: null,
-    });
+  function resetPageSignals() {
+    milestonesHit = {};
+    clicksThisPage = 0;
   }
 
   function scrollPercent() {
     var doc = document.documentElement;
     var body = document.body;
-    var scrollTop = window.scrollY ?? doc.scrollTop ?? body.scrollTop ?? 0;
+    var scrollTop = window.scrollY || doc.scrollTop || body.scrollTop || 0;
     var h = (doc.scrollHeight || body.scrollHeight) - window.innerHeight;
     if (h <= 0) return 0;
     return Math.min(100, Math.round((scrollTop / h) * 100));
   }
 
   function onScroll() {
-    if (!trackScroll) return;
+    if (!state.trackScroll) return;
     if (scrollTicking) return;
     scrollTicking = true;
     requestAnimationFrame(function () {
@@ -128,66 +164,72 @@
       [25, 50, 75, 100].forEach(function (m) {
         if (pct >= m && !milestonesHit[m]) {
           milestonesHit[m] = true;
-          sendScrollMilestone(m);
+          window.tracker.track('scroll_depth', { scrollDepth: m, x: 0, y: 0 });
         }
       });
     });
   }
 
   function onClickCapture(ev) {
-    if (!trackClicks) return;
-    if (ev.target && ev.target.closest && ev.target.closest('a[href],button,input,textarea,select')) {
-      sendClick(ev);
-    }
-  }
-
-  function resetPageSignals() {
-    milestonesHit = {};
-    clicksThisPage = 0;
-  }
-
-  window.scribeCountConversion = function (opts) {
-    opts = opts || {};
-    var t = opts.type || 'Signup';
-    var href = window.location.href;
-    if (!/^https?:\/\//i.test(href)) return Promise.resolve();
-    var meta = { type: t };
-    if (opts.value != null && opts.value !== '') meta.value = opts.value;
-    return post({
-      siteId: siteId,
-      eventType: 4,
-      pageUrl: href,
-      metadata: meta,
-      timestamp: null,
+    if (!state.trackClicks) return;
+    if (!ev.target || !ev.target.closest) return;
+    if (!ev.target.closest('a[href],button,input,textarea,select')) return;
+    if (clicksThisPage >= state.maxClicksPerPage) return;
+    clicksThisPage++;
+    window.tracker.track('click', {
+      x: Math.round(ev.clientX || 0),
+      y: Math.round(ev.clientY || 0),
+      scrollDepth: Math.round(scrollPercent() || 0),
     });
-  };
+  }
 
-  var lastUrl = '';
   function onNav() {
-    var href = window.location.href;
-    if (href === lastUrl) return;
+    var href = getPageUrl();
+    if (!href || href === lastUrl) return;
     lastUrl = href;
     resetPageSignals();
-    sendPageView();
+    window.tracker.track('page_view');
+    trackBusinessEventsFromPath();
   }
 
-  function bindEngagement() {
-    if (trackScroll) {
-      window.addEventListener('scroll', onScroll, { passive: true });
-      document.addEventListener('scroll', onScroll, { passive: true });
+  function seenKey(eventName, urlPath) {
+    return 'sc_seen_event::' + eventName + '::' + urlPath;
+  }
+
+  function trackOncePerPath(eventName) {
+    var path = (window.location.pathname || '/') + (window.location.search || '');
+    try {
+      var key = seenKey(eventName, path);
+      if (sessionStorage.getItem(key) === '1') return;
+      sessionStorage.setItem(key, '1');
+    } catch {
+      // If storage is blocked, fall through and track anyway.
     }
-    if (trackClicks) {
-      document.addEventListener('click', onClickCapture, true);
+    window.tracker.track(eventName);
+  }
+
+  function pathLooksLikeAny(tokens) {
+    var p = ((window.location.pathname || '') + (window.location.search || '')).toLowerCase();
+    return tokens.some(function (t) { return p.indexOf(t) >= 0; });
+  }
+
+  function trackBusinessEventsFromPath() {
+    // Heuristics so non-technical integrations get conversion-ish tracking immediately.
+    // Teams can still call tracker.track(...) explicitly for full accuracy.
+    if (pathLooksLikeAny(['/wishlist', 'wishlist'])) trackOncePerPath('add_to_wishlist');
+    if (pathLooksLikeAny(['/cart', 'cart'])) trackOncePerPath('add_to_cart');
+    if (pathLooksLikeAny(['/checkout', 'checkout'])) trackOncePerPath('checkout_started');
+    if (pathLooksLikeAny(['/thank-you', '/thankyou', '/order-success', '/success', 'order=complete'])) {
+      trackOncePerPath('order_completed');
     }
   }
 
-  function init() {
-    lastUrl = '';
-    onNav();
-    bindEngagement();
+  function bindAutoTracking() {
+    window.addEventListener('scroll', onScroll, { passive: true });
+    document.addEventListener('scroll', onScroll, { passive: true });
+    document.addEventListener('click', onClickCapture, true);
 
-    if (!trackSpa) return;
-
+    if (!state.trackSpa) return;
     var _push = history.pushState;
     var _replace = history.replaceState;
     history.pushState = function () {
@@ -203,9 +245,66 @@
     });
   }
 
-  if (document.readyState === 'complete' || document.readyState === 'interactive') {
-    setTimeout(init, 0);
-  } else {
-    document.addEventListener('DOMContentLoaded', init);
+  window.tracker = {
+    init: function (siteId, options) {
+      options = options || {};
+      state.siteId = String(siteId || options.siteId || '').trim();
+      state.endpoint = normalizeEndpoint(options.endpoint || state.endpoint);
+      assignIfDefined(state, 'trackSpa', options.trackSpa);
+      assignIfDefined(state, 'trackScroll', options.trackScroll);
+      assignIfDefined(state, 'trackClicks', options.trackClicks);
+      assignIfDefined(state, 'maxClicksPerPage', options.maxClicksPerPage);
+      assignIfDefined(state, 'debug', options.debug);
+
+      if (!state.siteId) {
+        warn('[ScribeCount] tracker.init requires a siteId');
+        return;
+      }
+
+      if (!state.initialized) {
+        state.initialized = true;
+        bindAutoTracking();
+      }
+      onNav();
+    },
+
+    identify: function (userId) {
+      if (!userId) return;
+      state.identifiedUserId = String(userId);
+    },
+
+    track: function (eventName, data) {
+      if (!state.siteId) {
+        warn('[ScribeCount] Call tracker.init(siteId, ...) before tracker.track(...)');
+        return Promise.resolve();
+      }
+      var name = String(eventName || '').trim();
+      if (!name) return Promise.resolve();
+      var payload = toPayload(name, data);
+      if (!payload) return Promise.resolve();
+      return postCollect(payload);
+    },
+  };
+
+  // Backwards compatibility with older integration docs.
+  window.scribeCountConversion = function (opts) {
+    opts = opts || {};
+    var name = opts.eventName || (opts.type && String(opts.type).toLowerCase() === 'purchase'
+      ? 'order_completed'
+      : 'checkout_started');
+    return window.tracker.track(name, opts);
+  };
+
+  // Auto-init from old config style if present.
+  var preloaded = window.scribeCountTracking;
+  if (preloaded && (preloaded.siteId || preloaded.apiKey)) {
+    window.tracker.init(preloaded.siteId || preloaded.apiKey, {
+      endpoint: preloaded.endpoint || '/api/collect',
+      trackSpa: preloaded.trackSpa,
+      trackScroll: preloaded.trackScroll,
+      trackClicks: preloaded.trackClicks,
+      maxClicksPerPage: preloaded.maxClicksPerPage,
+      debug: preloaded.debug,
+    });
   }
 })();

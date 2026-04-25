@@ -189,8 +189,8 @@ export class PagesComponent implements AfterViewInit {
             url: p.pageUrl,
             views: p.views,
             avgTime: formatDurationSeconds(p.avgTimeOnPageSeconds),
-            bounceRate: 0,
-            conversions: 0,
+            bounceRate: Math.round((p.bounceRate ?? 0) * 10) / 10,
+            conversions: p.conversions ?? 0,
           })),
         );
         queueMicrotask(() => this.syncChart());

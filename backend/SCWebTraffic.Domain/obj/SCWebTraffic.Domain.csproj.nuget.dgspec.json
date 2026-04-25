@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "E:\\Projects\\Project 3 (B)\\project\\backend\\SCWebTraffic.Domain\\SCWebTraffic.Domain.csproj": {}
+    "e:\\Projects\\Project 3 (B)\\project\\backend\\SCWebTraffic.Domain\\SCWebTraffic.Domain.csproj": {}
   },
   "projects": {
-    "E:\\Projects\\Project 3 (B)\\project\\backend\\SCWebTraffic.Domain\\SCWebTraffic.Domain.csproj": {
+    "e:\\Projects\\Project 3 (B)\\project\\backend\\SCWebTraffic.Domain\\SCWebTraffic.Domain.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "E:\\Projects\\Project 3 (B)\\project\\backend\\SCWebTraffic.Domain\\SCWebTraffic.Domain.csproj",
+        "projectUniqueName": "e:\\Projects\\Project 3 (B)\\project\\backend\\SCWebTraffic.Domain\\SCWebTraffic.Domain.csproj",
         "projectName": "SCWebTraffic.Domain",
-        "projectPath": "E:\\Projects\\Project 3 (B)\\project\\backend\\SCWebTraffic.Domain\\SCWebTraffic.Domain.csproj",
+        "projectPath": "e:\\Projects\\Project 3 (B)\\project\\backend\\SCWebTraffic.Domain\\SCWebTraffic.Domain.csproj",
         "packagesPath": "C:\\Users\\azgha\\.nuget\\packages\\",
-        "outputPath": "E:\\Projects\\Project 3 (B)\\project\\backend\\SCWebTraffic.Domain\\obj\\",
+        "outputPath": "e:\\Projects\\Project 3 (B)\\project\\backend\\SCWebTraffic.Domain\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
           "C:\\Users\\azgha\\AppData\\Roaming\\NuGet\\NuGet.Config",

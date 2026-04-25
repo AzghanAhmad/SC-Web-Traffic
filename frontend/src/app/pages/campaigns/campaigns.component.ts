@@ -12,7 +12,7 @@ import { CommonModule } from '@angular/common';
 import { toObservable, takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { combineLatest, of } from 'rxjs';
 import { catchError, map, switchMap } from 'rxjs/operators';
-import type { Campaign, CampaignPointDto } from '../../models/analytics.types';
+import type { Campaign, CampaignPointDto, SourcePointDto } from '../../models/analytics.types';
 import { ActiveSiteService } from '../../services/active-site.service';
 import { TrafficApiService } from '../../services/traffic-api.service';
 import { TrafficAutoRefreshService } from '../../services/traffic-auto-refresh.service';
@@ -45,6 +45,42 @@ Chart.register(...registerables);
         </div>
         <div class="chart-container">
           <canvas #campaignChart></canvas>
+        </div>
+      </section>
+
+      <!-- Campaign Table -->
+      <section class="card table-section animate-in" style="animation-delay: 180ms">
+        <div class="chart-header">
+          <div>
+            <h3 class="chart-title">Top Sources</h3>
+            <p class="chart-subtitle">Sessions by source (selected period)</p>
+          </div>
+        </div>
+        <div class="table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Source</th>
+                <th>Sessions</th>
+                <th>Share</th>
+              </tr>
+            </thead>
+            <tbody>
+              @if (!sources().length) {
+                <tr>
+                  <td colspan="3" class="empty-row">No source data yet.</td>
+                </tr>
+              } @else {
+                @for (s of sources(); track s.source) {
+                  <tr>
+                    <td class="campaign-name">{{ s.source }}</td>
+                    <td class="td-bold">{{ s.sessions | number }}</td>
+                    <td>{{ s.percentage }}%</td>
+                  </tr>
+                }
+              }
+            </tbody>
+          </table>
         </div>
       </section>
 
@@ -109,6 +145,11 @@ Chart.register(...registerables);
 
     .campaign-name { font-weight: 600; color: rgb(var(--color-text-primary)) !important; }
     .td-bold { font-weight: 600; color: rgb(var(--color-text-primary)) !important; }
+    .empty-row {
+      text-align: center;
+      color: rgb(var(--color-text-muted));
+      padding: 16px !important;
+    }
     .status-badge {
       padding: 4px 10px; border-radius: 9999px;
       font-size: 11px; font-weight: 600;
@@ -131,6 +172,7 @@ export class CampaignsComponent implements AfterViewInit {
   private readonly trafficRefresh = inject(TrafficAutoRefreshService);
 
   campaigns = signal<Campaign[]>([]);
+  sources = signal<SourcePointDto[]>([]);
   loadError = signal('');
   private campaignChart: Chart | null = null;
 
@@ -145,11 +187,15 @@ export class CampaignsComponent implements AfterViewInit {
           if (!site) {
             this.loadError.set('');
             this.campaigns.set([]);
-            return of({ ok: true as const, rows: [] as CampaignPointDto[] });
+            this.sources.set([]);
+            return of({ ok: true as const, rows: [] as CampaignPointDto[], sources: [] as SourcePointDto[] });
           }
-          return this.api.campaigns(site.siteId, 30).pipe(
-            map(rows => ({ ok: true as const, rows })),
-            catchError(err => of({ ok: false as const, err, rows: [] as CampaignPointDto[] })),
+          return combineLatest([
+            this.api.campaigns(site.siteId, 30).pipe(catchError(() => of<CampaignPointDto[]>([]))),
+            this.api.sources(site.siteId, 30).pipe(catchError(() => of<SourcePointDto[]>([]))),
+          ]).pipe(
+            map(([rows, sources]) => ({ ok: true as const, rows, sources })),
+            catchError(err => of({ ok: false as const, err, rows: [] as CampaignPointDto[], sources: [] as SourcePointDto[] })),
           );
         })
       )
@@ -161,12 +207,13 @@ export class CampaignsComponent implements AfterViewInit {
           rows.map(r => ({
             name: r.name,
             visits: r.visits,
-            engagement: '—',
+            engagement: r.visits > 0 ? `${Math.round((r.conversions / r.visits) * 1000) / 10}%` : '0%',
             conversions: r.conversions,
             revenue: 0,
-            status: 'active',
+            status: r.visits > 0 ? 'active' : 'paused',
           })),
         );
+        this.sources.set(result.sources);
         queueMicrotask(() => this.syncChart());
       });
   }

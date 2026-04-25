@@ -26,7 +26,7 @@ public sealed record EventCollectionResult(Guid EventId, Guid SessionId, Guid Vi
 
 public sealed record TrendPoint(string Date, int Visitors, int Sessions, int PageViews, int Conversions);
 public sealed record SourcePoint(string Source, int Sessions, double Percentage);
-public sealed record PagePoint(string PageUrl, int Views, double AvgTimeOnPageSeconds);
+public sealed record PagePoint(string PageUrl, int Views, double AvgTimeOnPageSeconds, double BounceRate, int Conversions);
 public sealed record DevicePoint(string DeviceType, int Sessions);
 public sealed record ConversionPoint(string Type, int Count, decimal? ValueSum);
 public sealed record CountryPoint(string Country, int Sessions, double Percentage);

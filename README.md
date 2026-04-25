@@ -107,6 +107,51 @@ If Railway created variables like `MYSQLHOST`, `MYSQLPORT`, `MYSQLDATABASE`, `MY
 
 4. Deploy. Railway injects **`PORT`** automatically; the API binds to it and uses forwarded headers (`X-Forwarded-For`, `X-Forwarded-Proto`) behind Railway’s proxy.
 
+## First-Party Tracking SDK (this stack)
+
+This project already supports a first-party tracking flow with the current stack:
+
+`Client website -> scribe-count.tracker.js -> /api/collect (or /api/track) -> MySQL -> Angular dashboard`
+
+### Core event mapping
+
+| Business Event | SDK call | Stored event type |
+|---|---|---|
+| Page view / impression | `tracker.track('page_view')` | `EventType.PageView (1)` |
+| Ad click | `tracker.track('ad_click', {...})` | `EventType.Click (2)` |
+| Add to wishlist | `tracker.track('add_to_wishlist', {...})` | `EventType.Click (2)` |
+| Add to cart | `tracker.track('add_to_cart', {...})` | `EventType.Click (2)` |
+| Remove from cart | `tracker.track('remove_from_cart', {...})` | `EventType.Click (2)` |
+| Checkout started | `tracker.track('checkout_started', {...})` | `EventType.Conversion (4)` |
+| Order completed | `tracker.track('order_completed', {...})` | `EventType.Conversion (4)` |
+
+For conversion rows, `metadata.type` is normalized to existing enum values:
+- `checkout_started` -> `BuyClick`
+- `order_completed` -> `Purchase`
+
+### Integration snippet
+
+```html
+<script src="https://YOUR_DOMAIN/scribe-count.tracker.js"></script>
+<script>
+  tracker.init("YOUR_SITE_ID_GUID", {
+    endpoint: "https://YOUR_DOMAIN/api/collect"
+  });
+
+  tracker.identify("user_123"); // optional
+
+  tracker.track("page_view");
+  tracker.track("add_to_cart", { productId: "p1", price: 500 });
+  tracker.track("checkout_started", { cartValue: 500 });
+  tracker.track("order_completed", { orderId: "o_1", value: 500 });
+</script>
+```
+
+Notes:
+- `/api/track` is available as an alias of `/api/collect`.
+- The tracker auto-captures page views, scroll milestones, and key clicks after `tracker.init(...)`.
+- Keep tenant isolation by using one `siteId` per client/site.
+
 ## Troubleshooting
 
 - **Migrations / “table already exists”:** If a migration failed partway, the database can be left inconsistent. Use your backup strategy or, in development only, the scripts under `backend/Database/` as documented there to reset and re-apply schema.

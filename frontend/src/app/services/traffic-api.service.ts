@@ -13,6 +13,8 @@ import type {
   FunnelStepDto,
   HeatmapPointDto,
   SiteDto,
+  LiveStatsDto,
+  CollectEventRequest,
 } from '../models/analytics.types';
 
 @Injectable({ providedIn: 'root' })
@@ -85,5 +87,14 @@ export class TrafficApiService {
       .set('pageUrl', pageUrl)
       .set('days', String(days));
     return this.http.get<HeatmapPointDto[]>('/api/traffic/heatmap', { params });
+  }
+
+  liveStats(siteId: string): Observable<LiveStatsDto> {
+    const params = new HttpParams().set('siteId', siteId);
+    return this.http.get<LiveStatsDto>('/api/traffic/live', { params });
+  }
+
+  collectEvent(req: CollectEventRequest): Observable<{ eventId: string; sessionId: string; visitorId: string }> {
+    return this.http.post<{ eventId: string; sessionId: string; visitorId: string }>('/api/collect', req);
   }
 }
