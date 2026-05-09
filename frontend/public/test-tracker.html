@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>ScribeCount tracker — cross-device test</title>
+  <style>
+    :root { color-scheme: light; }
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 24px 16px 80px;
+      background: #f7f8fb;
+      color: #1c2e4a;
+    }
+    h1 { font-size: 22px; margin: 0 0 8px; }
+    p { margin: 8px 0; line-height: 1.5; font-size: 14px; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; background: #e6efff; color: #1d4ed8; font-size: 12px; font-weight: 600; margin-right: 6px; }
+    .card {
+      background: #fff; border: 1px solid #e6e9f0; border-radius: 14px;
+      padding: 16px; margin: 16px 0; box-shadow: 0 1px 2px rgba(15,23,42,0.04);
+    }
+    code { background: #f0f2f7; padding: 2px 6px; border-radius: 4px; font-size: 12px; word-break: break-all; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+    button {
+      flex: 1 1 200px;
+      padding: 14px 16px;
+      font-size: 15px; font-weight: 600;
+      border: 1px solid #cbd5e1; border-radius: 10px;
+      background: #fff; color: #1c2e4a; cursor: pointer;
+      transition: all .15s;
+    }
+    button:hover { background: #1c2e4a; color: #fff; border-color: #1c2e4a; }
+    button:active { transform: scale(.98); }
+    button.primary { background: #1c2e4a; color: #fff; border-color: #1c2e4a; }
+    button.primary:hover { background: #2d4b78; }
+    pre { background: #0f172a; color: #e2e8f0; padding: 12px; border-radius: 10px; max-height: 240px; overflow: auto; font-size: 12px; line-height: 1.45; margin: 12px 0 0; }
+    .ok { color: #22c55e; font-weight: 600; }
+    .err { color: #f87171; font-weight: 600; }
+    .muted { color: #64748b; }
+    label { display: block; font-size: 12px; font-weight: 600; color: #475569; margin: 12px 0 4px; }
+    input { width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 13px; font-family: ui-monospace, monospace; }
+  </style>
+</head>
+<body>
+  <h1>ScribeCount tracker — cross-device test</h1>
+  <p class="muted">Open this page on any device. Each load fires a <code>page_view</code>; the buttons fire conversion events.</p>
+
+  <div class="card">
+    <p><span class="badge">step 1</span>Tracking key</p>
+    <p class="muted">Pre-fill via URL: <code>?key=sc_live_...</code> — or paste it below.</p>
+    <input id="key-input" type="text" placeholder="sc_live_..." autocomplete="off" autocapitalize="off" spellcheck="false" />
+
+    <p style="margin-top:16px;"><span class="badge">step 2</span>API endpoint</p>
+    <input id="endpoint-input" type="text" placeholder="http://192.168.1.20:5219/api/collect" autocomplete="off" autocapitalize="off" spellcheck="false" />
+    <p class="muted" style="font-size:12px;">Defaults to <code>http://&lt;this-host&gt;:5219/api/collect</code>. Override with <code>?endpoint=...</code> in the URL.</p>
+
+    <div class="row" style="margin-top:16px;">
+      <button id="btn-init" class="primary">Save &amp; start tracking</button>
+    </div>
+  </div>
+
+  <div class="card" id="actions" style="display:none;">
+    <p><span class="badge">step 3</span>Fire test events</p>
+    <p class="muted">A <code>page_view</code> already fired when you saved. Tap a button below to fire a conversion-style event.</p>
+    <div class="row">
+      <button id="btn-page">page_view (re-fire)</button>
+      <button id="btn-cart">add_to_cart</button>
+      <button id="btn-checkout">checkout_started</button>
+      <button id="btn-order">order_completed</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <p><span class="badge">live</span>Last response</p>
+    <pre id="log">(none yet)</pre>
+  </div>
+
+  <script src="/scribe-count.tracker.js" defer></script>
+  <script>
+    (function () {
+      var qs = new URLSearchParams(location.search);
+      var keyEl = document.getElementById('key-input');
+      var endpointEl = document.getElementById('endpoint-input');
+      var logEl = document.getElementById('log');
+      var actionsEl = document.getElementById('actions');
+
+      // Default endpoint = same host this page came from, port 5219.
+      // Works whether you opened http://localhost:4200/... or http://192.168.1.20:4200/...
+      var defaultEndpoint = location.protocol + '//' + location.hostname + ':5219/api/collect';
+
+      keyEl.value = qs.get('key') || qs.get('trackingKey') || '';
+      endpointEl.value = qs.get('endpoint') || defaultEndpoint;
+
+      function setLog(label, payload, isError) {
+        logEl.textContent = '';
+        var head = document.createElement('span');
+        head.className = isError ? 'err' : 'ok';
+        head.textContent = label + '\n';
+        logEl.appendChild(head);
+        var body = document.createElement('span');
+        body.textContent = typeof payload === 'string' ? payload : JSON.stringify(payload, null, 2);
+        logEl.appendChild(body);
+      }
+
+      // Wrap fetch so we can show the API response on screen.
+      var origFetch = window.fetch.bind(window);
+      window.fetch = function (url, opts) {
+        return origFetch(url, opts).then(function (res) {
+          var clone = res.clone();
+          clone.text().then(function (text) {
+            var label = (res.ok ? 'OK ' : 'FAIL ') + res.status + ' POST ' + url;
+            try { setLog(label, JSON.parse(text), !res.ok); }
+            catch (_) { setLog(label, text, !res.ok); }
+          }).catch(function () {});
+          return res;
+        }).catch(function (err) {
+          setLog('Network error', String(err), true);
+          throw err;
+        });
+      };
+
+      function start() {
+        var key = (keyEl.value || '').trim();
+        var endpoint = (endpointEl.value || '').trim();
+        if (!key || key.indexOf('sc_') !== 0) { setLog('Bad key', 'Tracking key must start with "sc_live_..."', true); return; }
+        if (!endpoint) { setLog('Bad endpoint', 'Endpoint URL is required', true); return; }
+        if (!window.tracker || typeof window.tracker.init !== 'function') { setLog('SDK not loaded', '/scribe-count.tracker.js did not load. Check the URL.', true); return; }
+
+        window.tracker.init(key, { endpoint: endpoint, debug: true });
+        actionsEl.style.display = '';
+        setLog('Initialized', { trackingKey: key, endpoint: endpoint, note: 'page_view auto-fired on init' });
+      }
+
+      document.getElementById('btn-init').onclick = start;
+      document.getElementById('btn-page').onclick = function () { window.tracker && window.tracker.track('page_view'); };
+      document.getElementById('btn-cart').onclick = function () { window.tracker && window.tracker.track('add_to_cart', { productId: 'BOOK-1', price: 999 }); };
+      document.getElementById('btn-checkout').onclick = function () { window.tracker && window.tracker.track('checkout_started', { cartValue: 999 }); };
+      document.getElementById('btn-order').onclick = function () { window.tracker && window.tracker.track('order_completed', { orderId: 'O-1', value: 999 }); };
+
+      // If both fields were prefilled via URL, auto-start so a buyer-style flow needs zero taps.
+      if (qs.get('key') || qs.get('trackingKey')) {
+        // Wait for the deferred SDK to attach before starting.
+        if (window.tracker && window.tracker.init) start();
+        else window.addEventListener('load', start);
+      }
+    })();
+  </script>
+</body>
+</html>

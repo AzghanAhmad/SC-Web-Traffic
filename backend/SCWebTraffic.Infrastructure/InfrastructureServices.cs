@@ -78,6 +78,12 @@ public sealed class TrafficDbContext(DbContextOptions<TrafficDbContext> options)
         {
             e.HasIndex(x => new { x.SiteId, x.Date }).IsUnique();
         });
+
+        modelBuilder.Entity<Site>(e =>
+        {
+            // Hot lookup path: every /api/collect call resolves siteId via tracking key.
+            e.HasIndex(x => x.TrackingKey).IsUnique();
+        });
     }
 }
 
@@ -89,6 +95,26 @@ public sealed class SchemaInitializer(
     {
         await dbContext.Database.MigrateAsync(cancellationToken);
         logger.LogInformation("Database migrations applied.");
+
+        // Backfill tracking keys for sites created before the column existed.
+        var sitesNeedingKey = await dbContext.SitesSet
+            .Where(s => s.TrackingKey == null || s.TrackingKey == string.Empty)
+            .ToListAsync(cancellationToken);
+        if (sitesNeedingKey.Count > 0)
+        {
+            foreach (var s in sitesNeedingKey)
+                s.TrackingKey = NewTrackingKey();
+            await dbContext.SaveChangesAsync(cancellationToken);
+            logger.LogInformation("Backfilled tracking keys for {Count} site(s).", sitesNeedingKey.Count);
+        }
+    }
+
+    private static string NewTrackingKey()
+    {
+        Span<byte> buf = stackalloc byte[24];
+        System.Security.Cryptography.RandomNumberGenerator.Fill(buf);
+        var s = Convert.ToBase64String(buf).Replace('+', '-').Replace('/', '_').TrimEnd('=');
+        return "sc_live_" + s;
     }
 }
 
@@ -130,20 +156,41 @@ public sealed class EventCollectionService(ITrafficDbContext db, IIpCountryResol
         CancellationToken cancellationToken = default,
         string? countryCodeHint = null)
     {
-        var siteExists = await db.Sites.AnyAsync(x => x.SiteId == request.SiteId, cancellationToken);
-        if (!siteExists) throw new InvalidOperationException("Invalid siteId.");
+        // Resolve which site this event belongs to. TrackingKey is preferred (the public-by-design
+        // identifier baked into the JS snippet on author websites). SiteId is supported for
+        // first-party server-to-server callers.
+        Guid siteId;
+        if (!string.IsNullOrWhiteSpace(request.TrackingKey))
+        {
+            var key = request.TrackingKey.Trim();
+            var matched = await db.Sites
+                .AsNoTracking()
+                .Where(x => x.TrackingKey == key)
+                .Select(x => (Guid?)x.SiteId)
+                .FirstOrDefaultAsync(cancellationToken);
+            if (!matched.HasValue) throw new InvalidOperationException("Invalid trackingKey.");
+            siteId = matched.Value;
+        }
+        else
+        {
+            if (request.SiteId == Guid.Empty)
+                throw new InvalidOperationException("trackingKey or siteId is required.");
+            var siteExists = await db.Sites.AnyAsync(x => x.SiteId == request.SiteId, cancellationToken);
+            if (!siteExists) throw new InvalidOperationException("Invalid siteId.");
+            siteId = request.SiteId;
+        }
 
         var now = request.Timestamp?.ToUniversalTime() ?? DateTime.UtcNow;
         var anonId = BuildAnonymousId(ipAddress, userAgent);
         var visitor = await db.Visitors
             .OrderByDescending(x => x.LastSeenAt)
-            .FirstOrDefaultAsync(x => x.SiteId == request.SiteId && x.AnonymousId == anonId, cancellationToken);
+            .FirstOrDefaultAsync(x => x.SiteId == siteId && x.AnonymousId == anonId, cancellationToken);
 
         if (visitor is null)
         {
             visitor = new Visitor
             {
-                SiteId = request.SiteId,
+                SiteId = siteId,
                 AnonymousId = anonId,
                 FirstSeenAt = now,
                 LastSeenAt = now
@@ -157,7 +204,7 @@ public sealed class EventCollectionService(ITrafficDbContext db, IIpCountryResol
 
         var session = await db.Sessions
             .OrderByDescending(x => x.LastActivityAt)
-            .FirstOrDefaultAsync(x => x.SiteId == request.SiteId && x.VisitorId == visitor.VisitorId && x.EndedAt == null, cancellationToken);
+            .FirstOrDefaultAsync(x => x.SiteId == siteId && x.VisitorId == visitor.VisitorId && x.EndedAt == null, cancellationToken);
 
         if (session is null || session.LastActivityAt < DateTime.UtcNow.AddMinutes(-30))
         {
@@ -167,7 +214,7 @@ public sealed class EventCollectionService(ITrafficDbContext db, IIpCountryResol
                 .ConfigureAwait(false);
             session = new Session
             {
-                SiteId = request.SiteId,
+                SiteId = siteId,
                 VisitorId = visitor.VisitorId,
                 StartedAt = now,
                 LastActivityAt = now,
@@ -189,7 +236,7 @@ public sealed class EventCollectionService(ITrafficDbContext db, IIpCountryResol
         var eventName = request.Metadata?.TryGetValue("eventName", out var n) == true ? n?.ToString() ?? request.EventType.ToString() : request.EventType.ToString();
         var evt = new TrafficEvent
         {
-            SiteId = request.SiteId,
+            SiteId = siteId,
             SessionId = session.SessionId,
             VisitorId = visitor.VisitorId,
             EventType = request.EventType,
@@ -204,7 +251,7 @@ public sealed class EventCollectionService(ITrafficDbContext db, IIpCountryResol
         {
             await db.AddAsync(new PageView
             {
-                SiteId = request.SiteId,
+                SiteId = siteId,
                 SessionId = session.SessionId,
                 PageUrl = request.PageUrl,
                 TimeOnPage = TryDouble(request.Metadata, "timeOnPage"),
@@ -216,7 +263,7 @@ public sealed class EventCollectionService(ITrafficDbContext db, IIpCountryResol
         {
             await db.AddAsync(new Conversion
             {
-                SiteId = request.SiteId,
+                SiteId = siteId,
                 SessionId = session.SessionId,
                 Type = ParseConversionType(request.Metadata),
                 Value = TryDecimal(request.Metadata, "value"),
@@ -228,7 +275,7 @@ public sealed class EventCollectionService(ITrafficDbContext db, IIpCountryResol
         {
             await db.AddAsync(new HeatmapData
             {
-                SiteId = request.SiteId,
+                SiteId = siteId,
                 PageUrl = request.PageUrl,
                 X = (int)TryDouble(request.Metadata, "x"),
                 Y = (int)TryDouble(request.Metadata, "y"),

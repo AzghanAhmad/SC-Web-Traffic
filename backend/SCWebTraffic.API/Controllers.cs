@@ -1,5 +1,6 @@
 using FluentValidation;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Cors;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
@@ -140,8 +141,26 @@ public sealed class SitesController(ITrafficDbContext db) : ControllerBase
             .AsNoTracking()
             .Where(s => s.UserId == sub)
             .OrderByDescending(s => s.CreatedAt)
-            .Select(s => new SiteDto(s.SiteId, s.Domain, s.Name))
+            .Select(s => new SiteDto(s.SiteId, s.Domain, s.Name, s.TrackingKey))
             .ToListAsync(cancellationToken);
+
+        // Backfill tracking keys for any historical site rows missing one (one-time per row).
+        var missingKey = list.Any(x => string.IsNullOrEmpty(x.TrackingKey));
+        if (missingKey)
+        {
+            var rows = await db.Sites
+                .Where(s => s.UserId == sub && (s.TrackingKey == null || s.TrackingKey == string.Empty))
+                .ToListAsync(cancellationToken);
+            foreach (var s in rows) s.TrackingKey = TrackingKeyGenerator.New();
+            await db.SaveChangesAsync(cancellationToken);
+
+            list = await db.Sites
+                .AsNoTracking()
+                .Where(s => s.UserId == sub)
+                .OrderByDescending(s => s.CreatedAt)
+                .Select(s => new SiteDto(s.SiteId, s.Domain, s.Name, s.TrackingKey))
+                .ToListAsync(cancellationToken);
+        }
 
         return Ok(list);
     }
@@ -158,7 +177,14 @@ public sealed class SitesController(ITrafficDbContext db) : ControllerBase
 
         var existing = await db.Sites.FirstOrDefaultAsync(s => s.UserId == sub && s.Domain == domain, cancellationToken);
         if (existing is not null)
-            return Ok(new SiteDto(existing.SiteId, existing.Domain, existing.Name));
+        {
+            if (string.IsNullOrEmpty(existing.TrackingKey))
+            {
+                existing.TrackingKey = TrackingKeyGenerator.New();
+                await db.SaveChangesAsync(cancellationToken);
+            }
+            return Ok(new SiteDto(existing.SiteId, existing.Domain, existing.Name, existing.TrackingKey));
+        }
 
         var site = new Site
         {
@@ -166,16 +192,49 @@ public sealed class SitesController(ITrafficDbContext db) : ControllerBase
             Domain = domain,
             Name = domain,
             Platform = SitePlatform.Other,
+            TrackingKey = TrackingKeyGenerator.New(),
         };
         await db.AddAsync(site, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
 
-        return Ok(new SiteDto(site.SiteId, site.Domain, site.Name));
+        return Ok(new SiteDto(site.SiteId, site.Domain, site.Name, site.TrackingKey));
+    }
+
+    /// <summary>
+    /// Rotate the tracking key. The old key stops accepting events immediately.
+    /// </summary>
+    [HttpPost("{siteId:guid}/tracking-key/rotate")]
+    public async Task<ActionResult<TrackingKeyDto>> RotateKey(Guid siteId, CancellationToken cancellationToken)
+    {
+        var sub = UserSub;
+        if (string.IsNullOrEmpty(sub))
+            return Unauthorized();
+
+        var site = await db.Sites
+            .FirstOrDefaultAsync(s => s.SiteId == siteId && s.UserId == sub, cancellationToken);
+        if (site is null) return NotFound();
+
+        site.TrackingKey = TrackingKeyGenerator.New();
+        await db.SaveChangesAsync(cancellationToken);
+        return Ok(new TrackingKeyDto(site.SiteId, site.TrackingKey));
+    }
+}
+
+internal static class TrackingKeyGenerator
+{
+    public static string New()
+    {
+        Span<byte> buf = stackalloc byte[24];
+        System.Security.Cryptography.RandomNumberGenerator.Fill(buf);
+        // url-safe Base64 (no '+' '/' '=')
+        var s = Convert.ToBase64String(buf).Replace('+', '-').Replace('/', '_').TrimEnd('=');
+        return "sc_live_" + s;
     }
 }
 
 [ApiController]
 [Route("api/collect")]
+[EnableCors("Public")]
 public sealed class CollectController(
     IEventCollectionService eventCollectionService,
     IValidator<CollectEventRequest> validator) : ControllerBase
@@ -186,6 +245,14 @@ public sealed class CollectController(
     [EnableRateLimiting("collect")]
     public async Task<ActionResult<EventCollectionResult>> Collect([FromBody] CollectEventRequest request, CancellationToken cancellationToken)
     {
+        // Tracking key may arrive in the body (preferred for the JS SDK) or as an X-Tracking-Key
+        // header (useful for server-to-server callers that don't want to mutate the body shape).
+        var headerKey = Request.Headers["X-Tracking-Key"].FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(request.TrackingKey) && !string.IsNullOrWhiteSpace(headerKey))
+        {
+            request = request with { TrackingKey = headerKey };
+        }
+
         var validation = await validator.ValidateAsync(request, cancellationToken);
         if (!validation.IsValid)
             return BadRequest(validation.Errors.Select(x => x.ErrorMessage));
@@ -196,8 +263,15 @@ public sealed class CollectController(
         var countryHint = Request.Headers["CF-IPCountry"].FirstOrDefault()
             ?? Request.Headers["CloudFront-Viewer-Country"].FirstOrDefault()
             ?? Request.Headers["True-Client-Country"].FirstOrDefault();
-        var result = await eventCollectionService.CollectAsync(request, ip, ua, referrer, cancellationToken, countryHint);
-        return Ok(result);
+        try
+        {
+            var result = await eventCollectionService.CollectAsync(request, ip, ua, referrer, cancellationToken, countryHint);
+            return Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
     }
 }
 

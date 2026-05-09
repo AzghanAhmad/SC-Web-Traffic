@@ -94,6 +94,17 @@ builder.Services.AddCors(options =>
                 .AllowAnyMethod();
         }
     });
+
+    // Public ingest endpoint — any author website can POST tracking events from any origin
+    // (web, native webview, file://, etc.). Requests are authenticated by per-site tracking key,
+    // so origin is not a trust boundary here. Same model as the major analytics SDKs.
+    options.AddPolicy("Public", policy =>
+    {
+        policy
+            .AllowAnyOrigin()
+            .AllowAnyHeader()
+            .AllowAnyMethod();
+    });
 });
 builder.Services.AddRateLimiter(options =>
 {
@@ -134,7 +145,15 @@ if (app.Environment.IsDevelopment())
 
 app.UseForwardedHeaders();
 app.UseCors("Frontend");
-app.UseHttpsRedirection();
+
+// HTTPS redirect breaks cross-origin POST to /api/collect (browsers refuse to follow a CORS
+// redirect on a preflight). Bypass it for the public ingest paths and let CORS + the tracking
+// key do the protecting. Authenticated dashboard endpoints stay under HTTPS redirect.
+app.UseWhen(
+    static ctx => !(ctx.Request.Path.StartsWithSegments("/api/collect", StringComparison.OrdinalIgnoreCase)
+                    || ctx.Request.Path.StartsWithSegments("/api/track", StringComparison.OrdinalIgnoreCase)),
+    branch => branch.UseHttpsRedirection());
+
 app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();

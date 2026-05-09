@@ -13,6 +13,7 @@ import type {
   FunnelStepDto,
   HeatmapPointDto,
   SiteDto,
+  TrackingKeyDto,
   LiveStatsDto,
   CollectEventRequest,
 } from '../models/analytics.types';
@@ -27,6 +28,10 @@ export class TrafficApiService {
 
   registerSite(url: string): Observable<SiteDto> {
     return this.http.post<SiteDto>('/api/sites', { url });
+  }
+
+  rotateTrackingKey(siteId: string): Observable<TrackingKeyDto> {
+    return this.http.post<TrackingKeyDto>(`/api/sites/${siteId}/tracking-key/rotate`, {});
   }
 
   overview(siteId: string, days: number): Observable<TrafficOverviewResponse> {

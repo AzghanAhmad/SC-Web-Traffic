@@ -1,25 +1,27 @@
 /**
  * ScribeCount first-party tracker SDK.
  *
- * Usage:
- *   <script src="https://yourdomain.com/scribe-count.tracker.js"></script>
+ * Usage on an author website (xyz.com) — paste before </body>:
+ *   <script src="https://app.scribecount.com/scribe-count.tracker.js" defer></script>
  *   <script>
- *     tracker.init('SITE_ID_GUID', { endpoint: 'https://yourdomain.com/api/collect' });
- *     tracker.identify('user_123'); // optional
- *     tracker.track('page_view');
- *     tracker.track('add_to_cart', { productId: 'p1', price: 999 });
- *     tracker.track('checkout_started');
- *     tracker.track('order_completed', { value: 999 });
+ *     tracker.init('sc_live_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX', {
+ *       endpoint: 'https://app.scribecount.com/api/collect'
+ *     });
+ *     tracker.identify('user_123');                                   // optional
+ *     tracker.track('add_to_cart', { productId: 'p1', price: 999 }); // optional explicit events
+ *     tracker.track('order_completed', { orderId: 'o1', value: 999 });
  *   </script>
  *
+ * The first argument to init() is the tracking key shown in the dashboard
+ * (Settings → Site tracking). It is publishable (safe to ship in client code) — it can
+ * only POST events for the site it belongs to. Rotate it from the dashboard if leaked.
+ *
+ * Auto-tracked: page_view, scroll_depth (25/50/75/100), clicks on a/button/input/select,
+ *               and heuristic conversions on /cart, /checkout, /thank-you, /order-success.
+ *
  * Supported core events:
- * - page_view
- * - ad_click
- * - add_to_wishlist
- * - add_to_cart
- * - remove_from_cart
- * - checkout_started
- * - order_completed
+ * - page_view, ad_click, add_to_wishlist, add_to_cart, remove_from_cart,
+ *   checkout_started, order_completed
  */
 (function () {
   'use strict';
@@ -37,6 +39,7 @@
   };
 
   var state = {
+    trackingKey: null,
     siteId: null,
     endpoint: '/api/collect',
     trackSpa: true,
@@ -131,13 +134,15 @@
     if (!pageUrl) return null;
     delete metadata.pageUrl;
 
-    return {
-      siteId: state.siteId,
+    var body = {
       eventType: map.eventType,
       pageUrl: pageUrl,
       metadata: metadata,
       timestamp: null,
     };
+    if (state.trackingKey) body.trackingKey = state.trackingKey;
+    if (state.siteId) body.siteId = state.siteId;
+    return body;
   }
 
   function resetPageSignals() {
@@ -214,8 +219,6 @@
   }
 
   function trackBusinessEventsFromPath() {
-    // Heuristics so non-technical integrations get conversion-ish tracking immediately.
-    // Teams can still call tracker.track(...) explicitly for full accuracy.
     if (pathLooksLikeAny(['/wishlist', 'wishlist'])) trackOncePerPath('add_to_wishlist');
     if (pathLooksLikeAny(['/cart', 'cart'])) trackOncePerPath('add_to_cart');
     if (pathLooksLikeAny(['/checkout', 'checkout'])) trackOncePerPath('checkout_started');
@@ -245,10 +248,27 @@
     });
   }
 
+  // A tracking key starts with "sc_" (e.g. "sc_live_..."). A SiteId is a 36-char GUID.
+  function looksLikeTrackingKey(value) {
+    return typeof value === 'string' && value.indexOf('sc_') === 0;
+  }
+
   window.tracker = {
-    init: function (siteId, options) {
+    init: function (keyOrSiteId, options) {
       options = options || {};
-      state.siteId = String(siteId || options.siteId || '').trim();
+      var first = String(keyOrSiteId || options.trackingKey || options.siteId || '').trim();
+
+      if (looksLikeTrackingKey(first)) {
+        state.trackingKey = first;
+      } else if (first) {
+        // Backwards compatibility: treat raw GUID as siteId.
+        state.siteId = first;
+      }
+
+      // Allow explicit overrides from options.
+      if (options.trackingKey) state.trackingKey = String(options.trackingKey).trim();
+      if (options.siteId) state.siteId = String(options.siteId).trim();
+
       state.endpoint = normalizeEndpoint(options.endpoint || state.endpoint);
       assignIfDefined(state, 'trackSpa', options.trackSpa);
       assignIfDefined(state, 'trackScroll', options.trackScroll);
@@ -256,8 +276,8 @@
       assignIfDefined(state, 'maxClicksPerPage', options.maxClicksPerPage);
       assignIfDefined(state, 'debug', options.debug);
 
-      if (!state.siteId) {
-        warn('[ScribeCount] tracker.init requires a siteId');
+      if (!state.trackingKey && !state.siteId) {
+        warn('[ScribeCount] tracker.init requires a trackingKey (preferred) or siteId');
         return;
       }
 
@@ -274,8 +294,8 @@
     },
 
     track: function (eventName, data) {
-      if (!state.siteId) {
-        warn('[ScribeCount] Call tracker.init(siteId, ...) before tracker.track(...)');
+      if (!state.trackingKey && !state.siteId) {
+        warn('[ScribeCount] Call tracker.init(trackingKey, ...) before tracker.track(...)');
         return Promise.resolve();
       }
       var name = String(eventName || '').trim();
@@ -295,10 +315,13 @@
     return window.tracker.track(name, opts);
   };
 
-  // Auto-init from old config style if present.
+  // Auto-init from a global config object if present, e.g.
+  //   window.scribeCountTracking = { trackingKey: 'sc_live_...', endpoint: '...' };
   var preloaded = window.scribeCountTracking;
-  if (preloaded && (preloaded.siteId || preloaded.apiKey)) {
-    window.tracker.init(preloaded.siteId || preloaded.apiKey, {
+  if (preloaded && (preloaded.trackingKey || preloaded.apiKey || preloaded.siteId)) {
+    window.tracker.init(preloaded.trackingKey || preloaded.apiKey || preloaded.siteId, {
+      trackingKey: preloaded.trackingKey || preloaded.apiKey,
+      siteId: preloaded.siteId,
       endpoint: preloaded.endpoint || '/api/collect',
       trackSpa: preloaded.trackSpa,
       trackScroll: preloaded.trackScroll,

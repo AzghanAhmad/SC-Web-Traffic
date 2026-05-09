@@ -129,16 +129,18 @@ For conversion rows, `metadata.type` is normalized to existing enum values:
 - `checkout_started` -> `BuyClick`
 - `order_completed` -> `Purchase`
 
-### Integration snippet
+### Integration snippet (tracking key — recommended)
+
+Each registered website gets a publishable **tracking key** of the form `sc_live_…`. It's safe to ship in client-side code: it can only POST events for the site it belongs to, and you can rotate it from **Settings → Site tracking** at any time.
 
 ```html
-<script src="https://YOUR_DOMAIN/scribe-count.tracker.js"></script>
+<script src="https://YOUR_DOMAIN/scribe-count.tracker.js" defer></script>
 <script>
-  tracker.init("YOUR_SITE_ID_GUID", {
+  tracker.init("sc_live_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX", {
     endpoint: "https://YOUR_DOMAIN/api/collect"
   });
 
-  tracker.identify("user_123"); // optional
+  tracker.identify("user_123"); // optional, ties future events to a buyer id
 
   tracker.track("page_view");
   tracker.track("add_to_cart", { productId: "p1", price: 500 });
@@ -147,10 +149,13 @@ For conversion rows, `metadata.type` is normalized to existing enum values:
 </script>
 ```
 
+The same `tracker.init(...)` call also accepts a raw site GUID for backward compatibility, but the key is preferred — it lets the dashboard rotate credentials without redeploying the snippet on every author's site.
+
 Notes:
 - `/api/track` is available as an alias of `/api/collect`.
 - The tracker auto-captures page views, scroll milestones, and key clicks after `tracker.init(...)`.
-- Keep tenant isolation by using one `siteId` per client/site.
+- For server-to-server calls, you can pass the key in a header instead of the body: `X-Tracking-Key: sc_live_…`.
+- One tracking key per author website; rotate from the dashboard to invalidate a leaked key.
 
 ## Troubleshooting
 

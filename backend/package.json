@@ -5,6 +5,7 @@
   "scripts": {
     "start": "dotnet run --project SCWebTraffic.API/SCWebTraffic.API.csproj",
     "start:api": "dotnet run --project SCWebTraffic.API/SCWebTraffic.API.csproj",
+    "start:lan": "dotnet run --project SCWebTraffic.API/SCWebTraffic.API.csproj --launch-profile lan",
     "start:worker": "dotnet run --project SCWebTraffic.Worker/SCWebTraffic.Worker.csproj",
     "build": "dotnet build SCWebTraffic.slnx",
     "restore": "dotnet restore SCWebTraffic.slnx"

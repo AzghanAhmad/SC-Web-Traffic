@@ -45,6 +45,14 @@ public sealed class Site
     public string Domain { get; set; } = string.Empty;
     public SitePlatform Platform { get; set; } = SitePlatform.Other;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    /// <summary>
+    /// Public tracking key embedded in the JS snippet on author websites.
+    /// Format: "sc_live_" + 32 url-safe chars. Used by /api/collect to resolve the SiteId
+    /// without exposing it directly. Treat like a publishable key (not a secret).
+    /// </summary>
+    [MaxLength(64)]
+    public string TrackingKey { get; set; } = string.Empty;
 }
 
 public sealed class Visitor

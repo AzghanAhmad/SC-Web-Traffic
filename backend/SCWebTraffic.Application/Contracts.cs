@@ -11,7 +11,8 @@ public sealed record CollectEventRequest(
     EventType EventType,
     string PageUrl,
     Dictionary<string, object?>? Metadata,
-    DateTime? Timestamp);
+    DateTime? Timestamp,
+    string? TrackingKey = null);
 
 public sealed record AuthRequest(string Email, string Password);
 public sealed record SignupRequest(string Email, string Password, string? DisplayName);
@@ -19,8 +20,9 @@ public sealed record AuthResponse(string AccessToken, DateTime ExpiresAtUtc);
 public sealed record AuthResultDto(string AccessToken, DateTime ExpiresAtUtc, Guid UserId, string Email, string DisplayName);
 public sealed record UserProfileDto(string Email, string DisplayName);
 
-public sealed record SiteDto(Guid SiteId, string Domain, string Name);
+public sealed record SiteDto(Guid SiteId, string Domain, string Name, string TrackingKey);
 public sealed record RegisterSiteRequest(string Url);
+public sealed record TrackingKeyDto(Guid SiteId, string TrackingKey);
 
 public sealed record EventCollectionResult(Guid EventId, Guid SessionId, Guid VisitorId);
 
@@ -129,7 +131,10 @@ public sealed class CollectEventRequestValidator : AbstractValidator<CollectEven
 {
     public CollectEventRequestValidator()
     {
-        RuleFor(x => x.SiteId).NotEmpty();
+        // Either a TrackingKey (preferred for author-site SDK) or a SiteId must be supplied.
+        RuleFor(x => x)
+            .Must(r => !string.IsNullOrWhiteSpace(r.TrackingKey) || r.SiteId != Guid.Empty)
+            .WithMessage("Either trackingKey or siteId is required.");
         RuleFor(x => x.PageUrl).NotEmpty().MaximumLength(1024).Must(url =>
             Uri.TryCreate(url, UriKind.Absolute, out var uri) &&
             (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps));

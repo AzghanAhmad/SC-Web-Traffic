@@ -276,12 +276,20 @@ namespace SCWebTraffic.Infrastructure.Persistence.Migrations
                     b.Property<int>("Platform")
                         .HasColumnType("int");
 
+                    b.Property<string>("TrackingKey")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("varchar(64)");
+
                     b.Property<string>("UserId")
                         .IsRequired()
                         .HasMaxLength(128)
                         .HasColumnType("varchar(128)");
 
                     b.HasKey("SiteId");
+
+                    b.HasIndex("TrackingKey")
+                        .IsUnique();
 
                     b.ToTable("SitesSet");
                 });

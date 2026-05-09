@@ -1,7 +1,7 @@
 import { Injectable, inject, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable, tap } from 'rxjs';
-import type { SiteDto } from '../models/analytics.types';
+import type { SiteDto, TrackingKeyDto } from '../models/analytics.types';
 
 @Injectable({ providedIn: 'root' })
 export class ActiveSiteService {
@@ -47,6 +47,21 @@ export class ActiveSiteService {
         this.site.set(s);
         localStorage.setItem(ActiveSiteService.storageKey, s.siteId);
         this.sites.update(list => (list.some(x => x.siteId === s.siteId) ? list : [...list, s]));
+      }),
+    );
+  }
+
+  /** Rotate the tracking key for the active (or any) site and update local state. */
+  rotateTrackingKey(siteId: string): Observable<TrackingKeyDto> {
+    return this.http.post<TrackingKeyDto>(`/api/sites/${siteId}/tracking-key/rotate`, {}).pipe(
+      tap(res => {
+        this.sites.update(list =>
+          list.map(s => (s.siteId === res.siteId ? { ...s, trackingKey: res.trackingKey } : s)),
+        );
+        const current = this.site();
+        if (current && current.siteId === res.siteId) {
+          this.site.set({ ...current, trackingKey: res.trackingKey });
+        }
       }),
     );
   }

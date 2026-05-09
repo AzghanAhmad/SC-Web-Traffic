@@ -270,11 +270,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "e:\\Projects\\Project 3 (B)\\project\\backend\\SCWebTraffic.Application\\SCWebTraffic.Application.csproj",
+      "projectUniqueName": "E:\\Projects\\Project 3 (B)\\project\\backend\\SCWebTraffic.Application\\SCWebTraffic.Application.csproj",
       "projectName": "SCWebTraffic.Application",
-      "projectPath": "e:\\Projects\\Project 3 (B)\\project\\backend\\SCWebTraffic.Application\\SCWebTraffic.Application.csproj",
+      "projectPath": "E:\\Projects\\Project 3 (B)\\project\\backend\\SCWebTraffic.Application\\SCWebTraffic.Application.csproj",
       "packagesPath": "C:\\Users\\azgha\\.nuget\\packages\\",
-      "outputPath": "e:\\Projects\\Project 3 (B)\\project\\backend\\SCWebTraffic.Application\\obj\\",
+      "outputPath": "E:\\Projects\\Project 3 (B)\\project\\backend\\SCWebTraffic.Application\\obj\\",
       "projectStyle": "PackageReference",
       "configFilePaths": [
         "C:\\Users\\azgha\\AppData\\Roaming\\NuGet\\NuGet.Config",
@@ -291,8 +291,8 @@
         "net10.0": {
           "targetAlias": "net10.0",
           "projectReferences": {
-            "e:\\Projects\\Project 3 (B)\\project\\backend\\SCWebTraffic.Domain\\SCWebTraffic.Domain.csproj": {
-              "projectPath": "e:\\Projects\\Project 3 (B)\\project\\backend\\SCWebTraffic.Domain\\SCWebTraffic.Domain.csproj"
+            "E:\\Projects\\Project 3 (B)\\project\\backend\\SCWebTraffic.Domain\\SCWebTraffic.Domain.csproj": {
+              "projectPath": "E:\\Projects\\Project 3 (B)\\project\\backend\\SCWebTraffic.Domain\\SCWebTraffic.Domain.csproj"
             }
           }
         }

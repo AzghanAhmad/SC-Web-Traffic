@@ -77,6 +77,12 @@ export interface SiteDto {
   siteId: string;
   domain: string;
   name: string;
+  trackingKey: string;
+}
+
+export interface TrackingKeyDto {
+  siteId: string;
+  trackingKey: string;
 }
 
 export interface AuthResultDto {
@@ -188,7 +194,8 @@ export interface LiveStatsDto {
 }
 
 export interface CollectEventRequest {
-  siteId: string;
+  siteId?: string;
+  trackingKey?: string;
   eventType: number; // 1=PageView 2=Click 3=Scroll 4=Conversion
   pageUrl: string;
   metadata?: Record<string, unknown>;

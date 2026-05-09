@@ -144,31 +144,48 @@ import { ActiveSiteService } from '../../services/active-site.service';
               <p class="section-desc">
                 Data is sent only to <strong>your ScribeCount server</strong> (<code>/api/collect</code>). When someone opens a page with the snippet below, a <strong>page view</strong> is recorded; the same script sends <strong>scroll milestones</strong> and <strong>clicks</strong> on links/buttons/forms for engagement and heatmaps.
               </p>
-              <p class="section-desc" *ngIf="activeSite.site() as s">
-                Active property: <strong>{{ s.domain }}</strong><br />
-                <span class="mono-id">siteId: {{ s.siteId }}</span>
-              </p>
               <p class="section-desc" *ngIf="!activeSite.site()">
-                Add a site URL with <strong>Track</strong> in the header first — you need a <code>siteId</code> for the snippet.
+                Add a site URL with <strong>Track</strong> in the header first — you need a tracking key for the snippet.
               </p>
             </div>
+
+            <div class="card" *ngIf="activeSite.site() as s">
+              <h2 class="section-title">Tracking key for {{ s.domain }}</h2>
+              <p class="section-desc">
+                Paste this key into your website's snippet (or the <code>tracker.init</code> call). It's safe to ship in client code — it can <em>only</em> POST events for this property. If it ever leaks, click <strong>Rotate key</strong>.
+              </p>
+              <div class="key-row">
+                <code class="key-pill">{{ s.trackingKey || '— generating —' }}</code>
+                <button class="btn-secondary" type="button" (click)="copy(s.trackingKey)" [disabled]="!s.trackingKey">{{ copied === 'key' ? 'Copied' : 'Copy' }}</button>
+                <button class="btn-secondary" type="button" (click)="rotateKey(s.siteId)" [disabled]="rotating">{{ rotating ? 'Rotating…' : 'Rotate key' }}</button>
+              </div>
+              <p class="section-desc" style="margin-top: 12px;">
+                <span class="mono-id">siteId (advanced/server callers): {{ s.siteId }}</span>
+              </p>
+            </div>
+
             <div class="card">
               <h2 class="section-title">Easy test (no coding website)</h2>
               <ol class="tracking-steps">
-                <li>Log in here and register your site with <strong>Track</strong> (copy your <code>siteId</code> from above).</li>
+                <li>Log in here and register your website with <strong>Track</strong> (a tracking key is generated automatically).</li>
                 <li>Open <strong>Thunder Client</strong>, Postman, or similar → <strong>New POST</strong> to <code>{{ collectUrl() }}</code>, header <code>Content-Type: application/json</code>, body = the JSON in the next card. Send — you should get a JSON success response.</li>
                 <li>Open <strong>Overview</strong> with that property selected — numbers update within about a minute (or after refresh).</li>
-                <li>To mimic “real visitors”, open your real site after you paste the auto-track snippet, or use a second browser / incognito and load a few pages.</li>
+                <li>To mimic “real visitors”, paste the auto-track snippet on your real site, or use a second browser / incognito and load a few pages.</li>
               </ol>
             </div>
+
             <div class="card">
               <h2 class="section-title">Auto track when the website opens (paste before <code>&lt;/body&gt;</code>)</h2>
               <p class="section-desc">
                 Replace <code>endpoint</code> if your API is not on the same host as this app (example: <code>https://api.yourdomain.com/api/collect</code>). Production: add your website’s origin to <code>Cors:AllowedOrigins</code> in the API <code>appsettings.json</code>.
               </p>
+              <div class="key-row" style="margin-bottom: 8px;">
+                <button class="btn-secondary" type="button" (click)="copy(trackerInstallSnippet(), 'snippet')">{{ copied === 'snippet' ? 'Copied' : 'Copy snippet' }}</button>
+              </div>
               <pre class="tracking-code">{{ trackerInstallSnippet() }}</pre>
               <p class="section-desc">The script file is served from this app as <code>{{ trackerScriptSrc() }}</code> (first-party ScribeCount asset).</p>
             </div>
+
             <div class="card">
               <h2 class="section-title">Manual: one page view (JSON)</h2>
               <p class="section-desc"><code>eventType</code>: 1 = PageView, 2 = Click, 3 = Scroll, 4 = Conversion. <code>pageUrl</code> must be a full <code>https://…</code> URL (use your real page URL when testing).</p>
@@ -177,9 +194,10 @@ import { ActiveSiteService } from '../../services/active-site.service';
                 POST to <code>{{ collectUrl() }}</code> with <code>Content-Type: application/json</code>.
               </p>
             </div>
+
             <div class="card">
               <h2 class="section-title">Manual: one conversion (JSON)</h2>
-              <p class="section-desc">After a signup or “buy” action on your site, POST this body (or call <code>scribeCountConversion</code> from the tracker script — see <code>scribe-count.tracker.js</code>).</p>
+              <p class="section-desc">After a signup or “buy” action on your site, POST this body (or call <code>tracker.track('order_completed', …)</code> from the SDK).</p>
               <pre class="tracking-code">{{ collectConversionSampleJson() }}</pre>
             </div>
           </div>
@@ -634,6 +652,26 @@ import { ActiveSiteService } from '../../services/active-site.service';
       word-break: break-all;
     }
 
+    .key-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .key-pill {
+      flex: 1 1 auto;
+      min-width: 240px;
+      padding: 10px 14px;
+      border-radius: 10px;
+      background: rgb(var(--color-surface-elevated));
+      border: 1px solid rgb(var(--color-border));
+      font-family: ui-monospace, monospace;
+      font-size: 13px;
+      color: rgb(var(--color-text-primary));
+      word-break: break-all;
+    }
+
     .tracking-code {
       margin: 12px 0 0;
       padding: 14px 16px;
@@ -709,26 +747,25 @@ export class SettingsComponent implements OnInit {
   }
 
   trackerInstallSnippet(): string {
-    const id = this.activeSite.site()?.siteId ?? 'YOUR_SITE_ID_FROM_TRACK';
+    const key = this.activeSite.site()?.trackingKey ?? 'sc_live_YOUR_TRACKING_KEY';
     const src = this.trackerScriptSrc();
-    return `<script>
-  window.scribeCountTracking = { siteId: '${id}' };
-</script>
-<script src="${src}" defer></script>
+    return `<script src="${src}" defer></script>
 <script>
-  tracker.init('${id}', { endpoint: '${this.collectUrl()}' });
-  // Example business events:
-  // tracker.track('add_to_cart', { productId: 'p1', price: 999 });
+  tracker.init('${key}', { endpoint: '${this.collectUrl()}' });
+  // Optional: tag the buyer if you have a logged-in id
+  // tracker.identify('user_123');
+  // Optional: explicit conversion events
+  // tracker.track('add_to_cart',     { productId: 'p1', price: 999 });
   // tracker.track('checkout_started');
   // tracker.track('order_completed', { orderId: 'o1', value: 999 });
 </script>`;
   }
 
   collectSampleJson(): string {
-    const id = this.activeSite.site()?.siteId ?? 'PASTE_SITE_ID_FROM_ABOVE';
+    const key = this.activeSite.site()?.trackingKey ?? 'sc_live_YOUR_TRACKING_KEY';
     return JSON.stringify(
       {
-        siteId: id,
+        trackingKey: key,
         eventType: 1,
         pageUrl: 'https://your-website.com/',
         metadata: {},
@@ -740,10 +777,10 @@ export class SettingsComponent implements OnInit {
   }
 
   collectConversionSampleJson(): string {
-    const id = this.activeSite.site()?.siteId ?? 'PASTE_SITE_ID_FROM_ABOVE';
+    const key = this.activeSite.site()?.trackingKey ?? 'sc_live_YOUR_TRACKING_KEY';
     return JSON.stringify(
       {
-        siteId: id,
+        trackingKey: key,
         eventType: 4,
         pageUrl: 'https://your-website.com/thank-you',
         metadata: { type: 'Signup', value: null },
@@ -752,6 +789,49 @@ export class SettingsComponent implements OnInit {
       null,
       2,
     );
+  }
+
+  copied: 'key' | 'snippet' | null = null;
+  rotating = false;
+
+  copy(value: string | null | undefined, label: 'key' | 'snippet' = 'key'): void {
+    if (!value) return;
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(value).catch(() => {/* noop: silent */});
+    }
+    this.copied = label;
+    this.cdr.detectChanges();
+    setTimeout(() => {
+      this.copied = null;
+      this.cdr.detectChanges();
+    }, 1500);
+  }
+
+  rotateKey(siteId: string): void {
+    if (!siteId || this.rotating) return;
+    if (typeof window !== 'undefined') {
+      const ok = window.confirm(
+        'Rotating will invalidate the current tracking key. Any websites using the old key will stop sending data until you replace the snippet. Continue?',
+      );
+      if (!ok) return;
+    }
+    this.rotating = true;
+    this.activeSite.rotateTrackingKey(siteId).subscribe({
+      next: () => {
+        this.rotating = false;
+        this.toastMessage = 'Tracking key rotated.';
+        this.showToast = true;
+        this.cdr.detectChanges();
+        setTimeout(() => { this.showToast = false; this.cdr.detectChanges(); }, 2500);
+      },
+      error: () => {
+        this.rotating = false;
+        this.toastMessage = 'Could not rotate the key. Try again.';
+        this.showToast = true;
+        this.cdr.detectChanges();
+        setTimeout(() => { this.showToast = false; this.cdr.detectChanges(); }, 2500);
+      },
+    });
   }
 
   ngOnInit(): void {
