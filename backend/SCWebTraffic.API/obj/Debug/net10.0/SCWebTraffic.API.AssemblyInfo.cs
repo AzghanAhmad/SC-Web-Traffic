@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("SCWebTraffic.API")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+91f4c5571781508529c77c49f394dd69a09ebc65")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+96bc502e5138a83468896ca487e4a2ccd6863d0c")]
 [assembly: System.Reflection.AssemblyProductAttribute("SCWebTraffic.API")]
 [assembly: System.Reflection.AssemblyTitleAttribute("SCWebTraffic.API")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

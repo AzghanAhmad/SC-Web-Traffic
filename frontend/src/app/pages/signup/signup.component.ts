@@ -16,9 +16,11 @@ import { httpErrorMessage } from '../../utils/analytics.helpers';
       <header class="nav" [class.scrolled]="navScrolled">
         <div class="nav-inner">
           <a routerLink="/" class="nav-logo">
-            <span class="logo-mark"><svg viewBox="0 0 36 36" fill="none"><defs><linearGradient id="lg" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#60a5fa"/><stop offset="50%" stop-color="#818cf8"/><stop offset="100%" stop-color="#a78bfa"/></linearGradient></defs><rect width="36" height="36" rx="10" fill="url(#lg)" opacity="0.15"/><path d="M10 18L14 14L18 18L22 14" stroke="url(#lg)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M10 22L14 18L18 22L22 18" stroke="url(#lg)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" opacity="0.5"/></svg></span>
-            <span class="logo-text">ScribeCount</span>
-            <span class="logo-badge">Traffic</span>
+            <img class="brand-logo-icon" src="/favicon_new.png" height="32" alt="ScribeCount" />
+            <span class="brand-text-group">
+              <span class="logo-text">ScribeCount</span>
+              <span class="brand-subtitle">TRAFFIC</span>
+            </span>
           </a>
           <nav class="nav-links">
             <a routerLink="/login">Log In</a>
@@ -119,7 +121,7 @@ import { httpErrorMessage } from '../../utils/analytics.helpers';
       <footer class="footer">
         <div class="footer-top">
           <div class="footer-brand">
-            <a routerLink="/" class="nav-logo"><span class="logo-mark"><svg viewBox="0 0 36 36" fill="none"><defs><linearGradient id="lg2" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#60a5fa"/><stop offset="100%" stop-color="#a78bfa"/></linearGradient></defs><rect width="36" height="36" rx="10" fill="url(#lg2)" opacity="0.15"/><path d="M10 18L14 14L18 18L22 14" stroke="url(#lg2)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M10 22L14 18L18 22L22 18" stroke="url(#lg2)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" opacity="0.5"/></svg></span><span class="logo-text">ScribeCount</span></a>
+            <a routerLink="/" class="nav-logo"><img class="brand-logo-icon" src="/favicon_new.png" height="32" alt="ScribeCount" /><span class="brand-text-group"><span class="logo-text">ScribeCount</span><span class="brand-subtitle">TRAFFIC</span></span></a>
             <p class="footer-tagline">Web traffic analytics &amp; insights dashboard.</p>
           </div>
           <div class="footer-links">
@@ -148,10 +150,10 @@ import { httpErrorMessage } from '../../utils/analytics.helpers';
     .nav.scrolled { background:rgba(15,23,42,.92);backdrop-filter:blur(18px);box-shadow:0 4px 30px rgba(0,0,0,.25); }
     .nav-inner { max-width:1200px;margin:0 auto;padding:.85rem 1.5rem;display:flex;align-items:center;justify-content:space-between; }
     .nav-logo { display:flex;align-items:center;gap:.6rem;text-decoration:none;color:white; }
-    .logo-mark { width:32px;height:32px;display:flex;align-items:center;justify-content:center; }
-    .logo-mark svg { width:100%;height:100%; }
+    .brand-logo-icon { display:block;height:32px;width:32px;object-fit:contain;border-radius:10px;flex-shrink:0;background:#ffffff;padding:4px; }
+    .brand-text-group { display:flex;flex-direction:column;line-height:1; }
     .logo-text { font-weight:700;font-size:1.1rem;letter-spacing:-.02em; }
-    .logo-badge { padding:2px 8px;background:rgba(99,102,241,.2);border:1px solid rgba(99,102,241,.3);border-radius:6px;font-size:.65rem;font-weight:700;color:#818cf8;text-transform:uppercase;letter-spacing:.08em; }
+    .brand-subtitle { font-size:10px;font-weight:700;color:#38bdf8;letter-spacing:.12em;margin-top:2px; }
     .nav-links { display:flex;align-items:center;gap:1.5rem; }
     .nav-links a { color:rgba(255,255,255,.8);text-decoration:none;font-size:.9rem;font-weight:500;transition:color .2s; }
     .nav-links a:hover { color:white; }

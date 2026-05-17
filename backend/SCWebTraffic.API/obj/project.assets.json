@@ -2960,7 +2960,8 @@
     ]
   },
   "packageFolders": {
-    "C:\\Users\\azgha\\.nuget\\packages\\": {}
+    "C:\\Users\\azgha\\.nuget\\packages\\": {},
+    "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages": {}
   },
   "project": {
     "version": "1.0.0",
@@ -2971,8 +2972,12 @@
       "packagesPath": "C:\\Users\\azgha\\.nuget\\packages\\",
       "outputPath": "E:\\Projects\\Project 3 (B)\\project\\backend\\SCWebTraffic.API\\obj\\",
       "projectStyle": "PackageReference",
+      "fallbackFolders": [
+        "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
+      ],
       "configFilePaths": [
         "C:\\Users\\azgha\\AppData\\Roaming\\NuGet\\NuGet.Config",
+        "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
         "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
       ],
       "originalTargetFrameworks": [

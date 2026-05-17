@@ -21,12 +21,15 @@ import { httpErrorMessage } from '../../utils/analytics.helpers';
         </button>
         <a class="brand" routerLink="/">
           <img
-            class="brand-logo-img"
-            src="/ScribeCount%20logo%20-%20promo%20tile%20large-01.jpg"
+            class="brand-logo-icon"
+            src="/favicon_new.png"
             height="36"
             alt="ScribeCount"
           />
-          <span class="logo-badge">Traffic</span>
+          <span class="brand-text-group">
+            <span class="brand-name">ScribeCount</span>
+            <span class="brand-subtitle">TRAFFIC</span>
+          </span>
         </a>
       </div>
 
@@ -258,26 +261,36 @@ import { httpErrorMessage } from '../../utils/analytics.helpers';
       text-decoration: none;
     }
 
-    .brand-logo-img {
+    .brand-logo-icon {
       display: block;
       height: 36px;
-      width: auto;
-      max-width: min(240px, 46vw);
+      width: 36px;
       object-fit: contain;
-      object-position: left center;
-      flex-shrink: 1;
+      border-radius: 10px;
+      flex-shrink: 0;
+      background: #ffffff;
+      padding: 4px;
     }
 
-    .logo-badge {
-      padding: 2px 8px;
-      background: rgba(129, 140, 248, 0.12);
-      border: 1px solid rgba(129, 140, 248, 0.35);
-      border-radius: 6px;
+    .brand-text-group {
+      display: flex;
+      flex-direction: column;
+      line-height: 1;
+    }
+
+    .brand-name {
+      font-size: 16px;
+      font-weight: 700;
+      color: #ffffff;
+      letter-spacing: -0.01em;
+    }
+
+    .brand-subtitle {
       font-size: 10px;
       font-weight: 700;
-      color: #a5b4fc;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
+      color: #38bdf8;
+      letter-spacing: 0.12em;
+      margin-top: 2px;
     }
 
     .top-bar-right {
@@ -383,7 +396,7 @@ import { httpErrorMessage } from '../../utils/analytics.helpers';
     }
 
     @media (max-width: 1024px) {
-      .logo-badge { display: none; }
+      .brand-subtitle { display: none; }
     }
 
     @media (max-width: 900px) {
