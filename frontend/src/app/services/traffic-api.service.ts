@@ -13,6 +13,7 @@ import type {
   FunnelStepDto,
   HeatmapPointDto,
   SiteDto,
+  OnboardingDto,
   TrackingKeyDto,
   LiveStatsDto,
   CollectEventRequest,
@@ -28,6 +29,10 @@ export class TrafficApiService {
 
   registerSite(url: string): Observable<SiteDto> {
     return this.http.post<SiteDto>('/api/sites', { url });
+  }
+
+  onboarding(): Observable<OnboardingDto> {
+    return this.http.get<OnboardingDto>('/api/onboarding');
   }
 
   rotateTrackingKey(siteId: string): Observable<TrackingKeyDto> {

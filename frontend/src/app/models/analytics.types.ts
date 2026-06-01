@@ -80,6 +80,18 @@ export interface SiteDto {
   trackingKey: string;
 }
 
+export interface OnboardingStepDto {
+  title: string;
+  description: string;
+  highlight: string;
+}
+
+export interface OnboardingDto {
+  heroTitle: string;
+  heroCopy: string;
+  steps: OnboardingStepDto[];
+}
+
 export interface TrackingKeyDto {
   siteId: string;
   trackingKey: string;

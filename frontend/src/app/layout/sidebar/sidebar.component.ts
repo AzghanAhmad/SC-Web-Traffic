@@ -17,7 +17,7 @@ interface NavItem {
     <aside class="sidebar" [class.collapsed]="collapsed()">
       <!-- Navigation -->
       <nav class="sidebar-nav">
-        <div class="nav-section-label" *ngIf="!collapsed()">Analytics</div>
+        <div class="nav-section-label" *ngIf="!collapsed()">Navigation</div>
         @for (item of navItems; track item.route) {
           <a class="nav-item"
              [routerLink]="item.route"
@@ -323,9 +323,12 @@ export class SidebarComponent {
   readonly auth = inject(AuthService);
   private readonly router = inject(Router);
 
-  navItems: NavItem[] = [
+  connectItems: NavItem[] = [
     { label: 'Overview', icon: 'home', route: '/' },
-    { label: 'Websites', icon: 'websites', route: '/websites' },
+    { label: 'Connect Websites', icon: 'websites', route: '/websites' },
+  ];
+
+  analyticsItems: NavItem[] = [
     { label: 'Traffic Analytics', icon: 'chart', route: '/traffic' },
     { label: 'Conversions', icon: 'conversion', route: '/conversions' },
     { label: 'Funnels', icon: 'funnels', route: '/funnels' },
@@ -335,6 +338,8 @@ export class SidebarComponent {
     { label: 'Device Insights', icon: 'devices', route: '/devices' },
     { label: 'Settings', icon: 'settings', route: '/settings' },
   ];
+
+  navItems: NavItem[] = [...this.connectItems, ...this.analyticsItems];
 
   toggleCollapse() {
     this.collapsed.update(v => !v);

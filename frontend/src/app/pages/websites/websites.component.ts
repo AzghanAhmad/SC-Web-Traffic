@@ -7,7 +7,7 @@ import {
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
+import { Router, RouterModule } from '@angular/router';
 import { finalize, catchError } from 'rxjs/operators';
 import { of, interval, Subscription } from 'rxjs';
 import { ActiveSiteService } from '../../services/active-site.service';
@@ -17,19 +17,46 @@ import type { SiteDto, LiveStatsDto } from '../../models/analytics.types';
 @Component({
   selector: 'app-websites',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, RouterModule],
   template: `
     <div class="page">
 
       <!-- Header -->
       <div class="page-header">
         <div>
-          <h1 class="page-title">Websites</h1>
-          <p class="page-sub">Add a website, open it with live tracking, and watch metrics update in real time.</p>
+          <h1 class="page-title">Connect Websites</h1>
+          <p class="page-sub">Add any website or storefront and start seeing traffic, conversions, funnels, and heatmaps in minutes.</p>
         </div>
         <button class="btn-primary" (click)="showAddForm.set(!showAddForm())">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
           Add Website
+        </button>
+      </div>
+
+      <div class="quick-start-card animate-in">
+        <div class="quick-start-header">
+          <div>
+            <p class="quick-start-label">Quick start</p>
+            <h2 class="quick-start-title">Connect your first website</h2>
+          </div>
+          <span class="quick-start-pill">Unlimited websites</span>
+        </div>
+        <p class="quick-start-copy">Paste your website URL and click Track. You can connect WooCommerce, Shopify, Wix, or any website, then switch instantly between sites in the top selector.</p>
+        <ol class="quick-start-steps">
+          <li><strong>Track a website:</strong> paste the full URL and click Track.</li>
+          <li><strong>Open Overview:</strong> select the site from the top switcher to see live insights.</li>
+          <li><strong>Install tracking:</strong> copy the snippet from <a class="settings-link" routerLink="/settings" fragment="tracking">Settings</a> so real visitor data appears across reports.</li>
+        </ol>
+      </div>
+
+      <div class="tracking-key-card animate-in">
+        <h3 class="tracking-key-title">Your current tracking key</h3>
+        <p class="tracking-key-copy">Use this key in your site snippet and then click below to learn how to connect it properly.</p>
+        <div class="tracking-key-box">
+          <code>{{ activeSite.site()?.trackingKey || 'No tracking key yet' }}</code>
+        </div>
+        <button class="btn-primary" routerLink="/settings" fragment="tracking">
+          How to connect
         </button>
       </div>
 
@@ -205,6 +232,111 @@ import type { SiteDto, LiveStatsDto } from '../../models/analytics.types';
     .page-sub {
       font-size: 13px;
       color: rgb(var(--color-text-muted));
+    }
+
+    .quick-start-card {
+      background: rgb(var(--color-surface));
+      border: 1px solid rgb(var(--color-border));
+      border-radius: 18px;
+      padding: 20px 24px;
+      margin-bottom: 24px;
+      display: grid;
+      gap: 14px;
+    }
+
+    .quick-start-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .quick-start-label {
+      font-size: 12px;
+      font-weight: 700;
+      color: rgb(var(--color-accent));
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+
+    .quick-start-title {
+      font-size: 18px;
+      font-weight: 700;
+      margin: 0;
+      color: rgb(var(--color-text-primary));
+    }
+
+    .quick-start-pill {
+      padding: 8px 14px;
+      border-radius: 999px;
+      background: rgba(59, 130, 246, 0.12);
+      color: rgb(var(--color-accent));
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .quick-start-copy {
+      margin: 0;
+      color: rgb(var(--color-text-muted));
+      font-size: 13px;
+      line-height: 1.7;
+    }
+
+    .quick-start-steps {
+      margin: 0;
+      padding-left: 1.25rem;
+      color: rgb(var(--color-text-muted));
+      font-size: 13px;
+      line-height: 1.8;
+    }
+
+    .quick-start-steps li {
+      margin-bottom: 10px;
+    }
+
+    .quick-start-steps a.settings-link {
+      color: rgb(var(--color-accent));
+      text-decoration: none;
+      font-weight: 700;
+    }
+
+    .quick-start-steps a.settings-link:hover {
+      text-decoration: underline;
+    }
+
+    .tracking-key-card {
+      background: rgb(var(--color-surface));
+      border: 1px solid rgb(var(--color-border));
+      border-radius: 18px;
+      padding: 22px;
+      margin-bottom: 24px;
+      display: grid;
+      gap: 16px;
+    }
+
+    .tracking-key-title {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 700;
+      color: rgb(var(--color-text-primary));
+    }
+
+    .tracking-key-copy {
+      margin: 0;
+      color: rgb(var(--color-text-muted));
+      font-size: 13px;
+      line-height: 1.7;
+    }
+
+    .tracking-key-box {
+      padding: 14px 16px;
+      border-radius: 14px;
+      background: rgb(var(--color-surface-elevated));
+      border: 1px solid rgb(var(--color-border));
+      font-family: ui-monospace, monospace;
+      color: rgb(var(--color-text-primary));
+      word-break: break-all;
     }
 
     /* Buttons */

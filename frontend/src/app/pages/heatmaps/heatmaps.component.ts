@@ -21,7 +21,8 @@ import { httpErrorMessage, timeRangeToDays } from '../../utils/analytics.helpers
       }
       <div class="page-header animate-in">
         <h1 class="page-title">Heatmaps</h1>
-        <p class="page-subtitle">Click coordinates and scroll depth from tracked events</p>
+        <p class="page-subtitle">See where visitors click and how far they scroll so you can improve page layout and calls to action.</p>
+        <p class="page-help">Heatmaps highlight page areas that attract attention and areas visitors ignore. This helps you tune headlines, buttons, and content order.</p>
       </div>
 
       <div class="toolbar animate-in" style="animation-delay: 80ms">
@@ -108,6 +109,7 @@ import { httpErrorMessage, timeRangeToDays } from '../../utils/analytics.helpers
     .page-header { margin-bottom: 28px; }
     .page-title { font-size: 24px; font-weight: 700; color: rgb(var(--color-text-primary)); letter-spacing: -0.02em; }
     .page-subtitle { font-size: 14px; color: rgb(var(--color-text-muted)); margin-top: 4px; }
+    .page-help { font-size: 13px; color: rgb(var(--color-text-muted)); margin-top: 8px; max-width: 720px; line-height: 1.7; }
 
     .toolbar {
       display: flex;

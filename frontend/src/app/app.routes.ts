@@ -74,6 +74,11 @@ export const routes: Routes = [
         loadComponent: () =>
           import('./pages/websites/websites.component').then(m => m.WebsitesComponent),
       },
+      {
+        path: 'get-started',
+        loadComponent: () =>
+          import('./pages/get-started/get-started.component').then(m => m.GetStartedComponent),
+      },
     ]
   },
   {

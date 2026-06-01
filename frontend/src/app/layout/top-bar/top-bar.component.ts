@@ -5,6 +5,7 @@ import { Router, RouterModule } from '@angular/router';
 import { finalize } from 'rxjs/operators';
 import { AuthService } from '../../services/auth.service';
 import { ActiveSiteService } from '../../services/active-site.service';
+import { BrandingService } from '../../services/branding.service';
 import { httpErrorMessage } from '../../utils/analytics.helpers';
 
 @Component({
@@ -27,7 +28,7 @@ import { httpErrorMessage } from '../../utils/analytics.helpers';
             alt="ScribeCount"
           />
           <span class="brand-text-group">
-            <span class="brand-name">ScribeCount</span>
+            <span class="brand-name">{{ branding.brandName() }}</span>
             <span class="brand-subtitle">TRAFFIC</span>
           </span>
         </a>
@@ -75,6 +76,7 @@ import { httpErrorMessage } from '../../utils/analytics.helpers';
       </div>
 
       <div class="top-bar-right">
+        <button class="demo-btn" type="button" routerLink="/get-started">Demo</button>
         <button class="user-avatar" type="button" (click)="$event.stopPropagation(); menuOpen.set(!menuOpen())">
           <span>{{ auth.initials() }}</span>
         </button>
@@ -253,6 +255,25 @@ import { httpErrorMessage } from '../../utils/analytics.helpers';
       color: #ffffff;
     }
 
+    .demo-btn {
+      min-width: 108px;
+      padding: 0 14px;
+      height: 36px;
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      background: rgba(255, 255, 255, 0.12);
+      color: #ffffff;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .demo-btn:hover {
+      background: rgba(255, 255, 255, 0.22);
+      transform: translateY(-1px);
+    }
+
     .brand {
       display: inline-flex;
       align-items: center;
@@ -429,6 +450,7 @@ export class TopBarComponent {
 
   readonly auth = inject(AuthService);
   readonly activeSite = inject(ActiveSiteService);
+  readonly branding = inject(BrandingService);
   private readonly router = inject(Router);
   private readonly hostRef = inject(ElementRef<HTMLElement>);
 

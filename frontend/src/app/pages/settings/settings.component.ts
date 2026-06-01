@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AuthService } from '../../services/auth.service';
 import { ActiveSiteService } from '../../services/active-site.service';
+import { BrandingService } from '../../services/branding.service';
 
 @Component({
   selector: 'app-settings',
@@ -71,33 +72,19 @@ import { ActiveSiteService } from '../../services/active-site.service';
           <!-- Appearance -->
           <div class="settings-section" *ngIf="activeSection === 'appearance'">
             <div class="card">
-              <h2 class="section-title">Theme</h2>
-              <p class="section-desc">Change how the dashboard looks</p>
-              <div class="theme-options">
-                <div class="theme-option" [class.active]="theme === 'light'" (click)="theme = 'light'">
-                  <div class="theme-preview light">
-                    <div class="preview-header"></div>
-                    <div class="preview-sidebar"></div>
-                    <div class="preview-content"></div>
-                  </div>
-                  <span class="theme-label">Light</span>
-                </div>
-                <div class="theme-option" [class.active]="theme === 'dark'" (click)="theme = 'dark'">
-                  <div class="theme-preview dark">
-                    <div class="preview-header"></div>
-                    <div class="preview-sidebar"></div>
-                    <div class="preview-content"></div>
-                  </div>
-                  <span class="theme-label">Dark</span>
-                </div>
-                <div class="theme-option" [class.active]="theme === 'auto'" (click)="theme = 'auto'">
-                  <div class="theme-preview auto">
-                    <div class="preview-header"></div>
-                    <div class="preview-sidebar"></div>
-                    <div class="preview-content"></div>
-                  </div>
-                  <span class="theme-label">Auto</span>
-                </div>
+              <h2 class="section-title">Branding</h2>
+              <p class="section-desc">Update the product name and accent used throughout the dashboard.</p>
+              <div class="form-group">
+                <label class="form-label">Brand Name</label>
+                <input type="text" class="form-input" [(ngModel)]="brandName" placeholder="ScribeCount" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">Accent Color</label>
+                <input type="color" class="form-input" [(ngModel)]="accentColorHex" />
+              </div>
+              <div class="card" style="background: rgba(59, 130, 246, 0.05); border-color: rgba(59, 130, 246, 0.2);">
+                <h3 class="section-title" style="font-size: 14px; margin-bottom: 8px;">Preview</h3>
+                <p class="section-desc">Brand name and accent color will be reflected across the dashboard, top navigation, and call-to-action elements.</p>
               </div>
               <button class="btn-primary" style="margin-top: 0.75rem;" (click)="saveSettings()" [disabled]="saving">
                 {{ saving ? 'Saving...' : 'Save Changes' }}
@@ -106,7 +93,7 @@ import { ActiveSiteService } from '../../services/active-site.service';
 
             <div class="card">
               <h2 class="section-title">Dashboard Preferences</h2>
-              <p class="section-desc">Set your default page and layout</p>
+              <p class="section-desc">Control where you land after logging in and how much sidebar space is used.</p>
               <div class="form-group">
                 <label class="form-label">Default Landing Page</label>
                 <select class="form-input" [(ngModel)]="defaultPage">
@@ -149,7 +136,7 @@ import { ActiveSiteService } from '../../services/active-site.service';
               </p>
             </div>
 
-            <div class="card" *ngIf="activeSite.site() as s">
+            <div class="card" id="tracking" *ngIf="activeSite.site() as s">
               <h2 class="section-title">Tracking key for {{ s.domain }}</h2>
               <p class="section-desc">
                 Paste this key into your website's snippet (or the <code>tracker.init</code> call). It's safe to ship in client code — it can <em>only</em> POST events for this property. If it ever leaks, click <strong>Rotate key</strong>.
@@ -202,54 +189,6 @@ import { ActiveSiteService } from '../../services/active-site.service';
             </div>
           </div>
 
-          <!-- Billing -->
-          <div class="settings-section" *ngIf="activeSection === 'billing'">
-            <div class="card plan-card">
-              <div class="plan-header">
-                <div>
-                  <h2 class="plan-name">Pro Plan</h2>
-                  <p class="plan-price">$29/month</p>
-                </div>
-                <span class="plan-badge">Current Plan</span>
-              </div>
-              <ul class="plan-features">
-                <li>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-                  Unlimited Websites
-                </li>
-                <li>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-                  Advanced Analytics
-                </li>
-                <li>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-                  Heatmaps & Funnels
-                </li>
-                <li>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-                  Priority Support
-                </li>
-              </ul>
-            </div>
-
-            <div class="card">
-              <h2 class="section-title">Billing History</h2>
-              <div class="billing-table">
-                <div class="billing-row header">
-                  <span>Date</span>
-                  <span>Description</span>
-                  <span>Amount</span>
-                  <span>Status</span>
-                </div>
-                <div class="billing-row" *ngFor="let inv of invoices">
-                  <span>{{ inv.date }}</span>
-                  <span>{{ inv.description }}</span>
-                  <span class="billing-amount">{{ inv.amount }}</span>
-                  <span class="billing-status paid">{{ inv.status }}</span>
-                </div>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
 
@@ -716,6 +655,8 @@ export class SettingsComponent implements OnInit {
   trackPageViews = true;
   trackUniqueVisitors = true;
   enableHeatmaps = true;
+  brandName = 'ScribeCount';
+  accentColorHex = '#3b82f6';
   accountName = '';
   accountEmail = '';
   organization = 'ScribeCount';
@@ -730,6 +671,7 @@ export class SettingsComponent implements OnInit {
   saving = false;
 
   readonly activeSite = inject(ActiveSiteService);
+  readonly branding = inject(BrandingService);
 
   constructor(
     private cdr: ChangeDetectorRef,
@@ -843,6 +785,9 @@ export class SettingsComponent implements OnInit {
       this.accountName = 'Guest';
       this.accountEmail = '';
     }
+
+    this.brandName = this.branding.brandName();
+    this.accentColorHex = this.rgbToHex(this.branding.accentColor());
   }
 
   saveSettings() {
@@ -858,6 +803,8 @@ export class SettingsComponent implements OnInit {
           email: this.accountEmail.trim(),
         });
       }
+      this.branding.setBrandName(this.brandName);
+      this.branding.setAccentColor(this.accentColorHex);
       this.toastMessage = 'Settings saved!';
       this.showToast = true;
       this.cdr.detectChanges();
@@ -892,11 +839,20 @@ export class SettingsComponent implements OnInit {
     setTimeout(() => { this.showToast = false; this.cdr.detectChanges(); }, 2500);
   }
 
+  private rgbToHex(rgb: string): string {
+    const values = rgb.replace(/rgba?\(|\)|\s+/g, '').split(',');
+    if (values.length < 3) return '#3b82f6';
+    return '#' + values.slice(0, 3).map((v) => {
+      const num = Number(v);
+      if (Number.isNaN(num)) return '00';
+      return Math.max(0, Math.min(255, num)).toString(16).padStart(2, '0');
+    }).join('').toLowerCase();
+  }
+
   sections = [
     { id: 'account', label: 'Account', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>' },
-    { id: 'appearance', label: 'Appearance', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>' },
-    { id: 'tracking', label: 'Site tracking', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>' },
-    { id: 'billing', label: 'Billing', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>' }
+    { id: 'appearance', label: 'Branding', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>' },
+    { id: 'tracking', label: 'Site tracking', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>' }
   ];
 
   emailNotifications = [

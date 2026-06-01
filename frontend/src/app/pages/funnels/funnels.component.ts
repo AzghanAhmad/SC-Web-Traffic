@@ -29,7 +29,12 @@ interface FunnelBuilderStep {
       }
       <div class="page-header animate-in">
         <h1 class="page-title">Funnel Analysis</h1>
-        <p class="page-subtitle">Build custom funnels and analyze user journeys</p>
+        <p class="page-subtitle">Build custom funnels and understand where visitors stop before the goal.</p>
+      </div>
+
+      <div class="help-card animate-in" style="animation-delay: 60ms">
+        <h2 class="help-card-title">What is a funnel?</h2>
+        <p class="help-card-text">A funnel tracks the path visitors take from one page to the next toward a goal like signup or checkout. Use it to see exactly where people drop off and which pages need improvement.</p>
       </div>
 
       <section class="card builder-section animate-in" style="animation-delay: 100ms">
@@ -71,7 +76,14 @@ interface FunnelBuilderStep {
         </div>
       </section>
 
-      @if (analyzed()) {
+      @if (analyzed() && funnelResults().length === 0) {
+        <div class="empty-state-card animate-in" style="animation-delay: 180ms">
+          <h3>No funnel data yet</h3>
+          <p>Install the tracker snippet from Settings, visit the selected pages in a browser, and then run Analyze again after a few visitors arrive.</p>
+        </div>
+      }
+
+      @if (analyzed() && funnelResults().length > 0) {
         <section class="card results-section animate-in" style="animation-delay: 200ms">
           <div class="chart-header">
             <div>
@@ -206,6 +218,27 @@ interface FunnelBuilderStep {
     .add-step-btn span { font-size: 18px; }
 
     .results-section { padding: 24px; }
+
+    .empty-state-card {
+      padding: 22px;
+      border-radius: 16px;
+      border: 1px solid rgb(var(--color-border));
+      background: rgb(var(--color-surface));
+      margin-bottom: 24px;
+    }
+
+    .empty-state-card h3 {
+      margin: 0 0 8px;
+      font-size: 16px;
+      color: rgb(var(--color-text-primary));
+    }
+
+    .empty-state-card p {
+      margin: 0;
+      color: rgb(var(--color-text-muted));
+      font-size: 13px;
+      line-height: 1.7;
+    }
 
     .overall-rate {
       display: flex; flex-direction: column;

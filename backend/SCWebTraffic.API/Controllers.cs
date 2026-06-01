@@ -220,6 +220,46 @@ public sealed class SitesController(ITrafficDbContext db) : ControllerBase
     }
 }
 
+[ApiController]
+[Authorize]
+[Route("api/onboarding")]
+public sealed class OnboardingController : ControllerBase
+{
+    [HttpGet]
+    public ActionResult<OnboardingDto> Get()
+    {
+        return Ok(new OnboardingDto(
+            HeroTitle: "Get started in 5 easy steps",
+            HeroCopy: "We’ll walk you through how website tracking works, how to connect your first site, and how to see real analytics immediately.",
+            Steps: new[]
+            {
+                new OnboardingStepDto(
+                    Title: "Register your first website",
+                    Description: "Paste the website URL and click Track to create a new property with a tracking key.",
+                    Highlight: "This creates the site record so traffic can be captured and attributed to your property."),
+                new OnboardingStepDto(
+                    Title: "Select the site in the dashboard",
+                    Description: "Choose your newly registered website from the site switcher in the top bar.",
+                    Highlight: "Selecting the active site ensures the right data appears in Overview, Traffic, and Heatmaps."),
+                new OnboardingStepDto(
+                    Title: "Install the tracking snippet",
+                    Description: "Copy the snippet from Settings and paste it into your website footer before </body>.",
+                    Highlight: "This snippet sends pageviews, clicks, scroll events, and conversion events back to the dashboard."),
+                new OnboardingStepDto(
+                    Title: "Watch real traffic arrive",
+                    Description: "Open the live site in a new browser tab and return to the Overview or Traffic page.",
+                    Highlight: "Data appears almost immediately so you can validate the connection and review sessions."),
+                new OnboardingStepDto(
+                    Title: "Explore Funnels and Heatmaps",
+                    Description: "Inspect visitor behavior, conversion drops, and where users click on your pages.",
+                    Highlight: "Funnels and Heatmaps help you optimize the site experience and increase conversions.")
+            }));
+    }
+}
+
+public sealed record OnboardingDto(IReadOnlyList<OnboardingStepDto> Steps, string HeroTitle, string HeroCopy);
+public sealed record OnboardingStepDto(string Title, string Description, string Highlight);
+
 internal static class TrackingKeyGenerator
 {
     public static string New()
