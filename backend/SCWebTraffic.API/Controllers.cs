@@ -141,7 +141,7 @@ public sealed class SitesController(ITrafficDbContext db) : ControllerBase
             .AsNoTracking()
             .Where(s => s.UserId == sub)
             .OrderByDescending(s => s.CreatedAt)
-            .Select(s => new SiteDto(s.SiteId, s.Domain, s.Name, s.TrackingKey))
+            .Select(s => new SiteDto(s.SiteId, s.Domain, s.Name, s.TrackingKey, s.Platform))
             .ToListAsync(cancellationToken);
 
         // Backfill tracking keys for any historical site rows missing one (one-time per row).
@@ -158,7 +158,7 @@ public sealed class SitesController(ITrafficDbContext db) : ControllerBase
                 .AsNoTracking()
                 .Where(s => s.UserId == sub)
                 .OrderByDescending(s => s.CreatedAt)
-                .Select(s => new SiteDto(s.SiteId, s.Domain, s.Name, s.TrackingKey))
+                .Select(s => new SiteDto(s.SiteId, s.Domain, s.Name, s.TrackingKey, s.Platform))
                 .ToListAsync(cancellationToken);
         }
 
@@ -181,23 +181,183 @@ public sealed class SitesController(ITrafficDbContext db) : ControllerBase
             if (string.IsNullOrEmpty(existing.TrackingKey))
             {
                 existing.TrackingKey = TrackingKeyGenerator.New();
-                await db.SaveChangesAsync(cancellationToken);
             }
-            return Ok(new SiteDto(existing.SiteId, existing.Domain, existing.Name, existing.TrackingKey));
+            if (request.Platform.HasValue)
+            {
+                existing.Platform = request.Platform.Value;
+            }
+            if (!string.IsNullOrWhiteSpace(request.Name))
+            {
+                existing.Name = request.Name.Trim();
+            }
+            await db.SaveChangesAsync(cancellationToken);
+            return Ok(new SiteDto(existing.SiteId, existing.Domain, existing.Name, existing.TrackingKey, existing.Platform));
         }
 
         var site = new Site
         {
             UserId = sub,
             Domain = domain,
-            Name = domain,
-            Platform = SitePlatform.Other,
+            Name = string.IsNullOrWhiteSpace(request.Name) ? domain : request.Name.Trim(),
+            Platform = request.Platform ?? SitePlatform.Other,
             TrackingKey = TrackingKeyGenerator.New(),
         };
         await db.AddAsync(site, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
 
-        return Ok(new SiteDto(site.SiteId, site.Domain, site.Name, site.TrackingKey));
+        return Ok(new SiteDto(site.SiteId, site.Domain, site.Name, site.TrackingKey, site.Platform));
+    }
+
+    [HttpGet("detect")]
+    public async Task<ActionResult<PlatformDetectionResultDto>> DetectPlatform([FromQuery] string url, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+            return BadRequest(new { message = "URL is required." });
+
+        if (!SiteUrlNormalizer.TryNormalize(url, out var domain, out var err))
+            return BadRequest(new { message = err });
+
+        var platform = SitePlatform.Other;
+        var lowerDomain = domain.ToLowerInvariant();
+
+        if (lowerDomain.Contains("wordpress") || lowerDomain.EndsWith(".wp"))
+        {
+            platform = SitePlatform.WordPress;
+        }
+        else if (lowerDomain.Contains("shopify") || lowerDomain.EndsWith("myshopify.com"))
+        {
+            platform = SitePlatform.Shopify;
+        }
+        else if (lowerDomain.Contains("wixsite") || lowerDomain.Contains("wix"))
+        {
+            platform = SitePlatform.Wix;
+        }
+        else if (lowerDomain.Contains("squarespace"))
+        {
+            platform = SitePlatform.Squarespace;
+        }
+        else if (lowerDomain.Contains("vercel.app") || lowerDomain.Contains("vercel"))
+        {
+            platform = SitePlatform.Vercel;
+        }
+        else if (lowerDomain.Contains("railway.app") || lowerDomain.Contains("railway"))
+        {
+            platform = SitePlatform.Railway;
+        }
+
+        if (platform == SitePlatform.Other)
+        {
+            using var client = new HttpClient();
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) ScribeCountDetector/1.0");
+            client.Timeout = TimeSpan.FromSeconds(5);
+            try
+            {
+                string html = "";
+                HttpResponseMessage? response = null;
+                try
+                {
+                    response = await client.GetAsync("https://" + domain, cancellationToken);
+                }
+                catch
+                {
+                    response = await client.GetAsync("http://" + domain, cancellationToken);
+                }
+
+                if (response != null)
+                {
+                    // Check HTTP headers first (e.g. Vercel)
+                    if (response.Headers.Contains("x-vercel-id") || 
+                        response.Headers.Contains("x-vercel-cache") || 
+                        response.Headers.Server.ToString().Contains("Vercel"))
+                    {
+                        platform = SitePlatform.Vercel;
+                    }
+                    else
+                    {
+                        html = await response.Content.ReadAsStringAsync(cancellationToken);
+                        if (html.Contains("/wp-content/") || html.Contains("/wp-includes/") || html.Contains("wp-submit"))
+                        {
+                            platform = SitePlatform.WordPress;
+                        }
+                        else if (html.Contains("cdn.shopify.com") || html.Contains("shopify-features") || html.Contains("Shopify.shop"))
+                        {
+                            platform = SitePlatform.Shopify;
+                        }
+                        else if (html.Contains("wix.com") || html.Contains("wixsite") || html.Contains("wix-code") || html.Contains("wix-elements"))
+                        {
+                            platform = SitePlatform.Wix;
+                        }
+                        else if (html.Contains("static1.squarespace.com") || html.Contains("squarespace-headers") || html.Contains("Squarespace.ON_DOC_READY"))
+                        {
+                            platform = SitePlatform.Squarespace;
+                        }
+                        else if (html.Contains("__NEXT_DATA__") || html.Contains("vercel-speed-insights") || html.Contains("_next/static"))
+                        {
+                            platform = SitePlatform.Vercel;
+                        }
+                        else if (html.Contains("railway.app") || html.Contains("railway-icon"))
+                        {
+                            platform = SitePlatform.Railway;
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                // Ignore network errors, fallback to domain-based
+            }
+        }
+
+        return Ok(new PlatformDetectionResultDto(platform));
+    }
+
+    [HttpPost("{siteId:guid}/verify")]
+    public async Task<ActionResult<VerifyResultDto>> Verify(Guid siteId, CancellationToken cancellationToken)
+    {
+        var sub = UserSub;
+        if (string.IsNullOrEmpty(sub))
+            return Unauthorized();
+
+        var site = await db.Sites
+            .FirstOrDefaultAsync(s => s.SiteId == siteId && s.UserId == sub, cancellationToken);
+        if (site is null) return NotFound();
+
+        // 1. Check if database has any events for this site
+        var hasEvents = await db.Events.AnyAsync(e => e.SiteId == siteId, cancellationToken);
+        if (hasEvents)
+        {
+            return Ok(new VerifyResultDto(site.SiteId, true, "Active events detected in the database."));
+        }
+
+        // 2. Fallback: HTTP ping to inspect HTML
+        using var client = new HttpClient();
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) ScribeCountVerifier/1.0");
+        client.Timeout = TimeSpan.FromSeconds(10);
+
+        try
+        {
+            string html = "";
+            try
+            {
+                html = await client.GetStringAsync("https://" + site.Domain, cancellationToken);
+            }
+            catch
+            {
+                html = await client.GetStringAsync("http://" + site.Domain, cancellationToken);
+            }
+
+            bool containsSnippet = html.Contains(site.TrackingKey);
+            if (containsSnippet)
+            {
+                return Ok(new VerifyResultDto(site.SiteId, true, "Snippet detected successfully via page source scan."));
+            }
+
+            return Ok(new VerifyResultDto(site.SiteId, false, "Tracking snippet not found in page HTML source."));
+        }
+        catch (Exception ex)
+        {
+            return Ok(new VerifyResultDto(site.SiteId, false, $"Could not reach site: {ex.Message}"));
+        }
     }
 
     /// <summary>

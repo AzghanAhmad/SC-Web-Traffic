@@ -68,3 +68,5 @@ E:\Projects\Project 3 (B)\project\backend\SCWebTraffic.Worker\obj\Debug\net10.0\
 E:\Projects\Project 3 (B)\project\backend\SCWebTraffic.Worker\obj\Debug\net10.0\SCWebTraffic.Worker.pdb
 E:\Projects\Project 3 (B)\project\backend\SCWebTraffic.Worker\obj\Debug\net10.0\SCWebTraffic.Worker.genruntimeconfig.cache
 E:\Projects\Project 3 (B)\project\backend\SCWebTraffic.Worker\obj\Debug\net10.0\ref\SCWebTraffic.Worker.dll
+E:\Projects\Project 3 (B)\project\backend\SCWebTraffic.Worker\bin\Debug\net10.0\Microsoft.Extensions.Http.dll
+E:\Projects\Project 3 (B)\project\backend\SCWebTraffic.Worker\obj\Debug\net10.0\SCWebTraffic.Worker.sourcelink.json

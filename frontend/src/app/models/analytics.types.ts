@@ -78,6 +78,17 @@ export interface SiteDto {
   domain: string;
   name: string;
   trackingKey: string;
+  platform: number;
+}
+
+export interface VerifyResultDto {
+  siteId: string;
+  isVerified: boolean;
+  details: string;
+}
+
+export interface PlatformDetectionResultDto {
+  platform: number;
 }
 
 export interface OnboardingStepDto {

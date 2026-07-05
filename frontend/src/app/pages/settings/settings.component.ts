@@ -118,75 +118,76 @@ import { BrandingService } from '../../services/branding.service';
 
           <!-- Site tracking (how data reaches this dashboard) -->
           <div class="settings-section" *ngIf="activeSection === 'tracking'">
+            
             <div class="card">
-              <h2 class="section-title">How Overview KPIs are filled (first-party)</h2>
-              <ul class="tracking-steps">
-                <li><strong>Visitors &amp; sessions</strong> — Created automatically when the tracker (or any collect call) runs; one visitor per browser fingerprint, sessions split after ~30 minutes idle.</li>
-                <li><strong>Engagement rate</strong> — % of sessions that did something meaningful: scrolled to <strong>25%+</strong>, <strong>clicked</strong> a link/button/input, viewed <strong>2+ pages</strong>, had <strong>10+ seconds</strong> on a page (send <code>timeOnPage</code> in page-view <code>metadata</code> if you build a custom integration), or had a <strong>conversion</strong>.</li>
-                <li><strong>Conversions</strong> — Send <code>eventType: 4</code> with <code>metadata.type</code> one of <code>Signup</code>, <code>BuyClick</code>, <code>Purchase</code> (optional <code>value</code> for revenue).</li>
+              <h2 class="section-title">How Your Website Tracking Works</h2>
+              <p class="section-desc" style="margin-top: 8px;">
+                ScribeCount Web Traffic helps you understand where your readers are coming from, which pages they visit, and where they click or drop off. ScribeCount is built specifically for authors and storefronts to track pageviews, book clicks, signups, and purchase conversions without invading reader privacy.
+              </p>
+              <ul class="tracking-steps" style="margin-top: 12px;">
+                <li><strong>Visitors &amp; sessions</strong> — Automatically counts readers visiting your site. Multiple page views from the same reader are grouped into a single session.</li>
+                <li><strong>Engagement rate</strong> — Measures the percentage of readers who interact with your pages (e.g. scroll down, click links, or view multiple pages).</li>
+                <li><strong>Conversions</strong> — Tracks important actions such as newsletter signups and purchase clicks.</li>
               </ul>
             </div>
-            <div class="card">
-              <h2 class="section-title">First-party tracking (no third-party analytics)</h2>
-              <p class="section-desc">
-                Data is sent only to <strong>your ScribeCount server</strong> (<code>/api/collect</code>). When someone opens a page with the snippet below, a <strong>page view</strong> is recorded; the same script sends <strong>scroll milestones</strong> and <strong>clicks</strong> on links/buttons/forms for engagement and heatmaps.
-              </p>
-              <p class="section-desc" *ngIf="!activeSite.site()">
-                Add a site URL with <strong>Track</strong> in the header first — you need a tracking key for the snippet.
-              </p>
-            </div>
 
-            <div class="card" id="tracking" *ngIf="activeSite.site() as s">
-              <h2 class="section-title">Tracking key for {{ s.domain }}</h2>
+            <!-- Pre-embedded Tracking Snippet for Active Site -->
+            <div class="card" *ngIf="activeSite.site() as s">
+              <h2 class="section-title">Tracking Code for {{ s.domain }}</h2>
               <p class="section-desc">
-                Paste this key into your website's snippet (or the <code>tracker.init</code> call). It's safe to ship in client code — it can <em>only</em> POST events for this property. If it ever leaks, click <strong>Rotate key</strong>.
+                Copy the code below and paste it into the head section of your website. We've pre-embedded your tracking key.
               </p>
-              <div class="key-row">
-                <code class="key-pill">{{ s.trackingKey || '— generating —' }}</code>
-                <button class="btn-secondary" type="button" (click)="copy(s.trackingKey)" [disabled]="!s.trackingKey">{{ copied === 'key' ? 'Copied' : 'Copy' }}</button>
-                <button class="btn-secondary" type="button" (click)="rotateKey(s.siteId)" [disabled]="rotating">{{ rotating ? 'Rotating…' : 'Rotate key' }}</button>
+              
+              <div class="key-row" style="margin-bottom: 12px;">
+                <button class="btn-primary" type="button" (click)="copy(trackerInstallSnippet(), 'snippet')">
+                  {{ copied === 'snippet' ? 'Copied' : 'Copy code snippet' }}
+                </button>
               </div>
-              <p class="section-desc" style="margin-top: 12px;">
-                <span class="mono-id">siteId (advanced/server callers): {{ s.siteId }}</span>
-              </p>
-            </div>
 
-            <div class="card">
-              <h2 class="section-title">Easy test (no coding website)</h2>
-              <ol class="tracking-steps">
-                <li>Log in here and register your website with <strong>Track</strong> (a tracking key is generated automatically).</li>
-                <li>Open <strong>Thunder Client</strong>, Postman, or similar → <strong>New POST</strong> to <code>{{ collectUrl() }}</code>, header <code>Content-Type: application/json</code>, body = the JSON in the next card. Send — you should get a JSON success response.</li>
-                <li>Open <strong>Overview</strong> with that property selected — numbers update within about a minute (or after refresh).</li>
-                <li>To mimic “real visitors”, paste the auto-track snippet on your real site, or use a second browser / incognito and load a few pages.</li>
-              </ol>
-            </div>
-
-            <div class="card">
-              <h2 class="section-title">Auto track when the website opens (paste before <code>&lt;/body&gt;</code>)</h2>
-              <p class="section-desc">
-                Replace <code>endpoint</code> if your API is not on the same host as this app (example: <code>https://api.yourdomain.com/api/collect</code>). Production: add your website’s origin to <code>Cors:AllowedOrigins</code> in the API <code>appsettings.json</code>.
-              </p>
-              <div class="key-row" style="margin-bottom: 8px;">
-                <button class="btn-secondary" type="button" (click)="copy(trackerInstallSnippet(), 'snippet')">{{ copied === 'snippet' ? 'Copied' : 'Copy snippet' }}</button>
-              </div>
               <pre class="tracking-code">{{ trackerInstallSnippet() }}</pre>
-              <p class="section-desc">The script file is served from this app as <code>{{ trackerScriptSrc() }}</code> (first-party ScribeCount asset).</p>
             </div>
 
-            <div class="card">
-              <h2 class="section-title">Manual: one page view (JSON)</h2>
-              <p class="section-desc"><code>eventType</code>: 1 = PageView, 2 = Click, 3 = Scroll, 4 = Conversion. <code>pageUrl</code> must be a full <code>https://…</code> URL (use your real page URL when testing).</p>
-              <pre class="tracking-code">{{ collectSampleJson() }}</pre>
+            <div class="card" *ngIf="!activeSite.site()">
+              <h2 class="section-title">No Active Website Selected</h2>
               <p class="section-desc">
-                POST to <code>{{ collectUrl() }}</code> with <code>Content-Type: application/json</code>.
+                Please register and select a website under <a routerLink="/websites" style="color: rgb(var(--color-accent)); font-weight: 600; text-decoration: none;">Connect Websites</a> to generate a tracking code.
               </p>
             </div>
 
-            <div class="card">
-              <h2 class="section-title">Manual: one conversion (JSON)</h2>
-              <p class="section-desc">After a signup or “buy” action on your site, POST this body (or call <code>tracker.track('order_completed', …)</code> from the SDK).</p>
-              <pre class="tracking-code">{{ collectConversionSampleJson() }}</pre>
+            <!-- Expandable Advanced Setup for Developers -->
+            <div class="card" *ngIf="activeSite.site() as s">
+              <button class="btn-secondary" style="width: 100%; justify-content: space-between; display: inline-flex;" type="button" (click)="showAdvanced = !showAdvanced">
+                <span>{{ showAdvanced ? 'Hide' : 'Show' }} Advanced Setup & Developer Reference</span>
+                <span>{{ showAdvanced ? '▲' : '▼' }}</span>
+              </button>
+
+              <div *ngIf="showAdvanced" style="margin-top: 18px; padding-top: 18px; border-top: 1px dashed rgb(var(--color-border));">
+                <h3 class="section-title" style="font-size: 14px; margin-bottom: 8px;">Raw Tracking Key & Site ID</h3>
+                <div class="key-row">
+                  <code class="key-pill">{{ s.trackingKey || '— generating —' }}</code>
+                  <button class="btn-secondary" type="button" (click)="copy(s.trackingKey)" [disabled]="!s.trackingKey">{{ copied === 'key' ? 'Copied' : 'Copy Key' }}</button>
+                  <button class="btn-secondary" type="button" (click)="rotateKey(s.siteId)" [disabled]="rotating">{{ rotating ? 'Rotating…' : 'Rotate key' }}</button>
+                </div>
+                <p class="section-desc" style="margin-top: 8px;">
+                  <span class="mono-id">siteId: {{ s.siteId }}</span>
+                </p>
+
+                <h3 class="section-title" style="font-size: 14px; margin-top: 20px; margin-bottom: 8px;">Direct API Testing (No Coding)</h3>
+                <ol class="tracking-steps" style="font-size: 12px; margin-top: 4px;">
+                  <li>Open <strong>Postman</strong> or <strong>Thunder Client</strong>.</li>
+                  <li>Send a <strong>POST</strong> request to: <code>{{ collectUrl() }}</code></li>
+                  <li>Set the header <code>Content-Type: application/json</code>.</li>
+                  <li>Paste the JSON payload from below into the body and click Send.</li>
+                </ol>
+
+                <h3 class="section-title" style="font-size: 14px; margin-top: 20px; margin-bottom: 4px;">Sample Page View Payload</h3>
+                <pre class="tracking-code">{{ collectSampleJson() }}</pre>
+
+                <h3 class="section-title" style="font-size: 14px; margin-top: 20px; margin-bottom: 4px;">Sample Conversion Payload</h3>
+                <pre class="tracking-code">{{ collectConversionSampleJson() }}</pre>
+              </div>
             </div>
+
           </div>
 
         </div>
@@ -669,6 +670,7 @@ export class SettingsComponent implements OnInit {
   newPassword = '';
   confirmPassword = '';
   saving = false;
+  showAdvanced = false;
 
   readonly activeSite = inject(ActiveSiteService);
   readonly branding = inject(BrandingService);

@@ -41,8 +41,8 @@ export class ActiveSiteService {
     localStorage.setItem(ActiveSiteService.storageKey, s.siteId);
   }
 
-  register(url: string): Observable<SiteDto> {
-    return this.http.post<SiteDto>('/api/sites', { url }).pipe(
+  register(url: string, name?: string, platform?: number): Observable<SiteDto> {
+    return this.http.post<SiteDto>('/api/sites', { url, name, platform }).pipe(
       tap(s => {
         this.site.set(s);
         localStorage.setItem(ActiveSiteService.storageKey, s.siteId);

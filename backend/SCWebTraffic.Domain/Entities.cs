@@ -7,7 +7,10 @@ public enum SitePlatform
     WordPress = 1,
     Shopify = 2,
     Wix = 3,
-    Other = 4
+    Other = 4,
+    Squarespace = 5,
+    Vercel = 6,
+    Railway = 7
 }
 
 public enum EventType

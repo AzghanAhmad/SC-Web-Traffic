@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "dgSpecHash": "s+IjWeVGpTU=",
+  "dgSpecHash": "An5EWupm7bM=",
   "success": true,
   "projectFilePath": "E:\\Projects\\Project 3 (B)\\project\\backend\\SCWebTraffic.Worker\\SCWebTraffic.Worker.csproj",
   "expectedPackageFiles": [
@@ -31,6 +31,7 @@
     "C:\\Users\\azgha\\.nuget\\packages\\microsoft.extensions.filesystemglobbing\\10.0.5\\microsoft.extensions.filesystemglobbing.10.0.5.nupkg.sha512",
     "C:\\Users\\azgha\\.nuget\\packages\\microsoft.extensions.hosting\\10.0.5\\microsoft.extensions.hosting.10.0.5.nupkg.sha512",
     "C:\\Users\\azgha\\.nuget\\packages\\microsoft.extensions.hosting.abstractions\\10.0.5\\microsoft.extensions.hosting.abstractions.10.0.5.nupkg.sha512",
+    "C:\\Users\\azgha\\.nuget\\packages\\microsoft.extensions.http\\9.0.0\\microsoft.extensions.http.9.0.0.nupkg.sha512",
     "C:\\Users\\azgha\\.nuget\\packages\\microsoft.extensions.logging\\10.0.5\\microsoft.extensions.logging.10.0.5.nupkg.sha512",
     "C:\\Users\\azgha\\.nuget\\packages\\microsoft.extensions.logging.abstractions\\10.0.5\\microsoft.extensions.logging.abstractions.10.0.5.nupkg.sha512",
     "C:\\Users\\azgha\\.nuget\\packages\\microsoft.extensions.logging.configuration\\10.0.5\\microsoft.extensions.logging.configuration.10.0.5.nupkg.sha512",

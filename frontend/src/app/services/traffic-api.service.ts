@@ -17,6 +17,8 @@ import type {
   TrackingKeyDto,
   LiveStatsDto,
   CollectEventRequest,
+  VerifyResultDto,
+  PlatformDetectionResultDto,
 } from '../models/analytics.types';
 
 @Injectable({ providedIn: 'root' })
@@ -27,8 +29,17 @@ export class TrafficApiService {
     return this.http.get<SiteDto[]>('/api/sites');
   }
 
-  registerSite(url: string): Observable<SiteDto> {
-    return this.http.post<SiteDto>('/api/sites', { url });
+  registerSite(url: string, name?: string, platform?: number): Observable<SiteDto> {
+    return this.http.post<SiteDto>('/api/sites', { url, name, platform });
+  }
+
+  verifySite(siteId: string): Observable<VerifyResultDto> {
+    return this.http.post<VerifyResultDto>(`/api/sites/${siteId}/verify`, {});
+  }
+
+  detectPlatform(url: string): Observable<PlatformDetectionResultDto> {
+    const params = new HttpParams().set('url', url);
+    return this.http.get<PlatformDetectionResultDto>('/api/sites/detect', { params });
   }
 
   onboarding(): Observable<OnboardingDto> {

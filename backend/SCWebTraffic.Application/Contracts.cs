@@ -20,9 +20,11 @@ public sealed record AuthResponse(string AccessToken, DateTime ExpiresAtUtc);
 public sealed record AuthResultDto(string AccessToken, DateTime ExpiresAtUtc, Guid UserId, string Email, string DisplayName);
 public sealed record UserProfileDto(string Email, string DisplayName);
 
-public sealed record SiteDto(Guid SiteId, string Domain, string Name, string TrackingKey);
-public sealed record RegisterSiteRequest(string Url);
+public sealed record SiteDto(Guid SiteId, string Domain, string Name, string TrackingKey, SitePlatform Platform);
+public sealed record RegisterSiteRequest(string Url, string? Name = null, SitePlatform? Platform = null);
 public sealed record TrackingKeyDto(Guid SiteId, string TrackingKey);
+public sealed record VerifyResultDto(Guid SiteId, bool IsVerified, string Details);
+public sealed record PlatformDetectionResultDto(SitePlatform Platform);
 
 public sealed record EventCollectionResult(Guid EventId, Guid SessionId, Guid VisitorId);
 
