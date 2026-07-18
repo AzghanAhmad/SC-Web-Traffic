@@ -693,16 +693,21 @@ export class SettingsComponent implements OnInit {
   trackerInstallSnippet(): string {
     const key = this.activeSite.site()?.trackingKey ?? 'sc_live_YOUR_TRACKING_KEY';
     const src = this.trackerScriptSrc();
-    return `<script src="${src}" defer></script>
-<script>
-  tracker.init('${key}', { endpoint: '${this.collectUrl()}' });
-  // Optional: tag the buyer if you have a logged-in id
-  // tracker.identify('user_123');
-  // Optional: explicit conversion events
-  // tracker.track('add_to_cart',     { productId: 'p1', price: 999 });
-  // tracker.track('checkout_started');
-  // tracker.track('order_completed', { orderId: 'o1', value: 999 });
-</script>`;
+    // Paste once. Works on plain HTML and single-page apps (React/Next/Vue/Angular):
+    // route changes and conversions (Add to cart / Buy / Checkout / Place order) are auto-tracked.
+    return `<script>
+  window.scribeCountTracking = {
+    trackingKey: '${key}',
+    endpoint: '${this.collectUrl()}'
+  };
+</script>
+<script src="${src}" defer></script>
+
+<!-- Optional, from your app code:
+  tracker.identify('user_123');                                  // tag a logged-in buyer
+  tracker.track('add_to_cart',     { productId: 'p1', price: 999 });
+  tracker.track('order_completed', { orderId: 'o1', value: 999 });
+-->`;
   }
 
   collectSampleJson(): string {
@@ -796,22 +801,30 @@ export class SettingsComponent implements OnInit {
     this.saving = true;
     this.cdr.detectChanges();
 
-    // Simulated save
-    setTimeout(() => {
+    const name = this.accountName.trim();
+    const email = this.accountEmail.trim();
+    if (!name || !email) {
       this.saving = false;
-      if (this.accountName.trim() && this.accountEmail.trim()) {
-        this.auth.setSession({
-          displayName: this.accountName.trim(),
-          email: this.accountEmail.trim(),
-        });
-      }
-      this.branding.setBrandName(this.brandName);
-      this.branding.setAccentColor(this.accentColorHex);
-      this.toastMessage = 'Settings saved!';
-      this.showToast = true;
-      this.cdr.detectChanges();
-      setTimeout(() => { this.showToast = false; this.cdr.detectChanges(); }, 2500);
-    }, 800);
+      this.showToastMsg('Name and email are required.');
+      return;
+    }
+
+    this.auth.updateProfile(name, email).subscribe({
+      next: () => {
+        this.branding.setBrandName(this.brandName);
+        this.branding.setAccentColor(this.accentColorHex);
+        this.saving = false;
+        this.toastMessage = 'Settings saved!';
+        this.showToast = true;
+        this.cdr.detectChanges();
+        setTimeout(() => { this.showToast = false; this.cdr.detectChanges(); }, 2500);
+      },
+      error: err => {
+        this.saving = false;
+        const msg = err?.error?.message ?? err?.message ?? 'Failed to save settings.';
+        this.showToastMsg(msg);
+      },
+    });
   }
 
   changePassword() {
@@ -827,11 +840,18 @@ export class SettingsComponent implements OnInit {
       this.showToastMsg('New password must be at least 6 characters.');
       return;
     }
-    // Simulated password change
-    this.currentPassword = '';
-    this.newPassword = '';
-    this.confirmPassword = '';
-    this.showToastMsg('Password changed successfully.');
+    this.auth.changePassword(this.currentPassword, this.newPassword).subscribe({
+      next: () => {
+        this.currentPassword = '';
+        this.newPassword = '';
+        this.confirmPassword = '';
+        this.showToastMsg('Password changed successfully.');
+      },
+      error: err => {
+        const msg = err?.error?.message ?? err?.message ?? 'Failed to change password.';
+        this.showToastMsg(msg);
+      },
+    });
   }
 
   private showToastMsg(msg: string) {

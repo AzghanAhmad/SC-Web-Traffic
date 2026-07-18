@@ -71,6 +71,9 @@ public sealed class AuthController(ITrafficDbContext db, ITokenService tokenServ
     [AllowAnonymous]
     public async Task<ActionResult<AuthResultDto>> Login([FromBody] AuthRequest request, CancellationToken cancellationToken)
     {
+        if (request is null || string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrWhiteSpace(request.Password))
+            return BadRequest(new { message = "Email and password are required." });
+
         var email = request.Email.Trim();
         var user = await db.AppUsers.FirstOrDefaultAsync(x => x.Email == email, cancellationToken);
         if (user is null)
@@ -121,6 +124,65 @@ public sealed class AuthController(ITrafficDbContext db, ITokenService tokenServ
 
         return Ok(new UserProfileDto(user.Email, user.DisplayName ?? ""));
     }
+
+    [HttpPut("me")]
+    [Authorize]
+    public async Task<ActionResult<UserProfileDto>> UpdateProfile([FromBody] UpdateProfileRequest request, CancellationToken cancellationToken)
+    {
+        var sub = JwtUserId.FromPrincipal(User);
+        if (!Guid.TryParse(sub, out var userId))
+            return Unauthorized();
+
+        var user = await db.AppUsers.FirstOrDefaultAsync(x => x.UserId == userId, cancellationToken);
+        if (user is null)
+            return Unauthorized();
+
+        var name = (request.DisplayName ?? string.Empty).Trim();
+        if (string.IsNullOrEmpty(name))
+            return BadRequest(new { message = "Display name is required." });
+        if (name.Length > 120)
+            return BadRequest(new { message = "Display name is too long." });
+
+        user.DisplayName = name;
+
+        if (!string.IsNullOrWhiteSpace(request.Email))
+        {
+            var email = request.Email.Trim();
+            if (!email.Contains('@'))
+                return BadRequest(new { message = "Enter a valid email address." });
+            var taken = await db.AppUsers.AnyAsync(x => x.Email == email && x.UserId != userId, cancellationToken);
+            if (taken)
+                return Conflict(new { message = "That email is already in use." });
+            user.Email = email;
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+        return Ok(new UserProfileDto(user.Email, user.DisplayName ?? ""));
+    }
+
+    [HttpPost("change-password")]
+    [Authorize]
+    public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordRequest request, CancellationToken cancellationToken)
+    {
+        var sub = JwtUserId.FromPrincipal(User);
+        if (!Guid.TryParse(sub, out var userId))
+            return Unauthorized();
+
+        var user = await db.AppUsers.FirstOrDefaultAsync(x => x.UserId == userId, cancellationToken);
+        if (user is null)
+            return Unauthorized();
+
+        if (string.IsNullOrEmpty(request.CurrentPassword) || string.IsNullOrEmpty(request.NewPassword))
+            return BadRequest(new { message = "Current and new password are required." });
+        if (!string.Equals(user.PasswordHash, request.CurrentPassword, StringComparison.Ordinal))
+            return BadRequest(new { message = "Current password is incorrect." });
+        if (request.NewPassword.Length < 6)
+            return BadRequest(new { message = "New password must be at least 6 characters." });
+
+        user.PasswordHash = request.NewPassword;
+        await db.SaveChangesAsync(cancellationToken);
+        return Ok(new { message = "Password updated." });
+    }
 }
 
 [ApiController]
@@ -139,7 +201,7 @@ public sealed class SitesController(ITrafficDbContext db) : ControllerBase
 
         var list = await db.Sites
             .AsNoTracking()
-            .Where(s => s.UserId == sub)
+            .Where(s => s.UserId == sub && s.SetupCompleted)
             .OrderByDescending(s => s.CreatedAt)
             .Select(s => new SiteDto(s.SiteId, s.Domain, s.Name, s.TrackingKey, s.Platform))
             .ToListAsync(cancellationToken);
@@ -156,7 +218,7 @@ public sealed class SitesController(ITrafficDbContext db) : ControllerBase
 
             list = await db.Sites
                 .AsNoTracking()
-                .Where(s => s.UserId == sub)
+                .Where(s => s.UserId == sub && s.SetupCompleted)
                 .OrderByDescending(s => s.CreatedAt)
                 .Select(s => new SiteDto(s.SiteId, s.Domain, s.Name, s.TrackingKey, s.Platform))
                 .ToListAsync(cancellationToken);
@@ -190,6 +252,11 @@ public sealed class SitesController(ITrafficDbContext db) : ControllerBase
             {
                 existing.Name = request.Name.Trim();
             }
+            // Only ever mark complete; never downgrade a site that already finished setup.
+            if (request.CompleteSetup)
+            {
+                existing.SetupCompleted = true;
+            }
             await db.SaveChangesAsync(cancellationToken);
             return Ok(new SiteDto(existing.SiteId, existing.Domain, existing.Name, existing.TrackingKey, existing.Platform));
         }
@@ -201,6 +268,7 @@ public sealed class SitesController(ITrafficDbContext db) : ControllerBase
             Name = string.IsNullOrWhiteSpace(request.Name) ? domain : request.Name.Trim(),
             Platform = request.Platform ?? SitePlatform.Other,
             TrackingKey = TrackingKeyGenerator.New(),
+            SetupCompleted = request.CompleteSetup,
         };
         await db.AddAsync(site, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
@@ -326,6 +394,7 @@ public sealed class SitesController(ITrafficDbContext db) : ControllerBase
         var hasEvents = await db.Events.AnyAsync(e => e.SiteId == siteId, cancellationToken);
         if (hasEvents)
         {
+            await MarkSetupCompleteAsync(site, cancellationToken);
             return Ok(new VerifyResultDto(site.SiteId, true, "Active events detected in the database."));
         }
 
@@ -349,6 +418,7 @@ public sealed class SitesController(ITrafficDbContext db) : ControllerBase
             bool containsSnippet = html.Contains(site.TrackingKey);
             if (containsSnippet)
             {
+                await MarkSetupCompleteAsync(site, cancellationToken);
                 return Ok(new VerifyResultDto(site.SiteId, true, "Snippet detected successfully via page source scan."));
             }
 
@@ -358,6 +428,13 @@ public sealed class SitesController(ITrafficDbContext db) : ControllerBase
         {
             return Ok(new VerifyResultDto(site.SiteId, false, $"Could not reach site: {ex.Message}"));
         }
+    }
+
+    private async Task MarkSetupCompleteAsync(Site site, CancellationToken cancellationToken)
+    {
+        if (site.SetupCompleted) return;
+        site.SetupCompleted = true;
+        await db.SaveChangesAsync(cancellationToken);
     }
 
     /// <summary>
@@ -493,10 +570,14 @@ public sealed class TrafficController(
     }
 
     [HttpGet("overview")]
-    public async Task<ActionResult<TrafficOverviewResponse>> Overview([FromQuery] Guid siteId, [FromQuery] int days = 30, CancellationToken cancellationToken = default)
+    public async Task<ActionResult<TrafficOverviewResponse>> Overview(
+        [FromQuery] Guid siteId, 
+        [FromQuery] int days = 30, 
+        [FromQuery] int tzOffset = 0, 
+        CancellationToken cancellationToken = default)
     {
         if (!await OwnsSiteAsync(siteId, cancellationToken)) return Forbid();
-        return Ok(await analyticsService.GetOverviewAsync(siteId, days, cancellationToken));
+        return Ok(await analyticsService.GetOverviewAsync(siteId, days, tzOffset, cancellationToken));
     }
 
     [HttpGet("sources")]
@@ -556,7 +637,9 @@ public sealed class TrafficController(
         CancellationToken cancellationToken = default)
     {
         if (!await OwnsSiteAsync(siteId, cancellationToken)) return Forbid();
-        return Ok(await funnelService.CalculateAsync(siteId, steps.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries), days, cancellationToken));
+        var stepList = steps
+            .Split(['|', ','], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return Ok(await funnelService.CalculateAsync(siteId, stepList, days, cancellationToken));
     }
 
     [HttpGet("heatmap")]
@@ -568,6 +651,17 @@ public sealed class TrafficController(
     {
         if (!await OwnsSiteAsync(siteId, cancellationToken)) return Forbid();
         return Ok(await heatmapService.GetPageHeatmapAsync(siteId, pageUrl, days, cancellationToken));
+    }
+
+    [HttpGet("scroll-depth")]
+    public async Task<ActionResult<IReadOnlyList<ScrollDepthPointDto>>> ScrollDepth(
+        [FromQuery] Guid siteId,
+        [FromQuery] string pageUrl,
+        [FromQuery] int days = 30,
+        CancellationToken cancellationToken = default)
+    {
+        if (!await OwnsSiteAsync(siteId, cancellationToken)) return Forbid();
+        return Ok(await heatmapService.GetScrollDepthAsync(siteId, pageUrl, days, cancellationToken));
     }
 
     [HttpGet("live")]
@@ -597,7 +691,7 @@ public sealed class TrafficController(
             .CountAsync(cancellationToken);
 
         var todayConversions = await db.Conversions
-            .Where(c => c.SiteId == siteId && c.Timestamp >= today)
+            .Where(c => c.SiteId == siteId && c.Timestamp >= today && c.Type == ConversionType.Purchase)
             .CountAsync(cancellationToken);
 
         var totalSessions = await db.Sessions

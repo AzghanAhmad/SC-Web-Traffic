@@ -134,26 +134,62 @@ For conversion rows, `metadata.type` is normalized to existing enum values:
 Each registered website gets a publishable **tracking key** of the form `sc_live_…`. It's safe to ship in client-side code: it can only POST events for the site it belongs to, and you can rotate it from **Settings → Site tracking** at any time.
 
 ```html
-<script src="https://YOUR_DOMAIN/scribe-count.tracker.js" defer></script>
+<!-- Paste once (e.g. before </head> or in your root layout). Order-safe: config first, SDK second. -->
 <script>
-  tracker.init("sc_live_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX", {
+  window.scribeCountTracking = {
+    trackingKey: "sc_live_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
     endpoint: "https://YOUR_DOMAIN/api/collect"
-  });
-
-  tracker.identify("user_123"); // optional, ties future events to a buyer id
-
-  tracker.track("page_view");
-  tracker.track("add_to_cart", { productId: "p1", price: 500 });
-  tracker.track("checkout_started", { cartValue: 500 });
-  tracker.track("order_completed", { orderId: "o_1", value: 500 });
+  };
 </script>
+<script src="https://YOUR_DOMAIN/scribe-count.tracker.js" defer></script>
+```
+
+Page views (including SPA route changes) and conversions are tracked automatically. You can also fire events explicitly from your app code:
+
+```js
+tracker.identify("user_123"); // optional, ties future events to a buyer id
+tracker.track("add_to_cart", { productId: "p1", price: 500 });
+tracker.track("checkout_started", { cartValue: 500 });
+tracker.track("order_completed", { orderId: "o_1", value: 500 });
 ```
 
 The same `tracker.init(...)` call also accepts a raw site GUID for backward compatibility, but the key is preferred — it lets the dashboard rotate credentials without redeploying the snippet on every author's site.
 
+### Single-page apps (React / Next.js / Vue / Angular)
+
+Paste the snippet **once** (in your root layout / `index.html` / `App.tsx`). You do **not** need to add it to every page. The SDK detects client-side route changes via the History API (`pushState`/`replaceState`), `popstate`, `hashchange`, and a lightweight URL poll, so every virtual navigation fires a fresh `page_view` — even though the app never does a full reload.
+
+### Automatic intent capture (not conversions)
+
+After `tracker.init(...)`, clicks are inspected for funnel intent from button/link text. These are **not** counted as conversions:
+
+| Button text                              | Event              | Counted as conversion? |
+| ---------------------------------------- | ------------------ | ---------------------- |
+| "add to cart" / "add to bag"             | `add_to_cart`      | No                     |
+| "buy" / "buy now" / "order now"          | `checkout_started` | No                     |
+| "checkout" / "proceed to checkout"       | `checkout_started` | No                     |
+| "place order" / "pay now"                | `checkout_attempt` | No — order may still fail |
+
+**Conversions (Purchase)** are recorded only when the order succeeds:
+
+1. Call after payment succeeds: `tracker.track('order_completed', { orderId: 'o1', value: 9.99 })`
+2. Or when the buyer reaches a thank-you / order-success URL
+3. Or a confirmed success element: `data-sc-event="order_completed" data-sc-confirmed="true"`
+
+### Identity (visitors & sessions)
+
+```js
+tracker.identify('buyer_123'); // after login — different accounts = different visitors (even same device)
+tracker.reset();               // on logout
+```
+
+Every event also sends a durable browser `clientId` (localStorage) so anonymous visitors stay stable until login.
+
 Notes:
 - `/api/track` is available as an alias of `/api/collect`.
-- The tracker auto-captures page views, scroll milestones, and key clicks after `tracker.init(...)`.
+- The tracker auto-captures page views (incl. SPA route changes), scroll milestones, key clicks, and conversions after `tracker.init(...)`.
+- Options: `trackSpa`, `trackScroll`, `trackClicks`, `trackConversions` (all default `true`), `maxClicksPerPage`, `debug`.
+- Funnels accept either page paths (e.g. `/checkout`) **or** event names (e.g. `add_to_cart`, `order_completed`) as steps.
 - For server-to-server calls, you can pass the key in a header instead of the body: `X-Tracking-Key: sc_live_…`.
 - One tracking key per author website; rotate from the dashboard to invalidate a leaked key.
 

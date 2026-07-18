@@ -53,31 +53,55 @@ Chart.register(...registerables);
       </div>
 
       <div class="charts-row">
-        <!-- Device Distribution Pie -->
-        <section class="card chart-section animate-in" style="animation-delay: 200ms">
+        <!-- Device Distribution Pie (Redesigned) -->
+        <div class="chart-card-clean animate-in" style="animation-delay: 200ms">
           <div class="chart-header">
             <div>
-              <h3 class="chart-title">Device Distribution</h3>
+              <h3>Device Distribution</h3>
               <p class="chart-subtitle">Traffic share by device type</p>
             </div>
-          </div>
-          <div class="chart-container donut-container">
-            <canvas #devicePie></canvas>
-          </div>
-        </section>
-
-        <!-- Conversion by Device Bar -->
-        <section class="card chart-section animate-in" style="animation-delay: 300ms">
-          <div class="chart-header">
-            <div>
-              <h3 class="chart-title">Sessions by Device</h3>
-              <p class="chart-subtitle">Total sessions per device type</p>
+            <div class="chart-legend-row">
+              <div class="chart-legend">
+                <span class="dot" style="background: #6366f1"></span>
+                Desktop
+              </div>
+              <div class="chart-legend">
+                <span class="dot" style="background: #a855f7"></span>
+                Mobile
+              </div>
+              <div class="chart-legend">
+                <span class="dot" style="background: #34d399"></span>
+                Tablet
+              </div>
             </div>
           </div>
-          <div class="chart-container">
-            <canvas #conversionBar></canvas>
+          <div class="chart-body">
+            <div class="chart-container donut-container">
+              <canvas #devicePie></canvas>
+            </div>
           </div>
-        </section>
+        </div>
+
+        <!-- Sessions by Device (Redesigned) -->
+        <div class="chart-card-clean animate-in" style="animation-delay: 300ms">
+          <div class="chart-header">
+            <div>
+              <h3>Sessions by Device</h3>
+              <p class="chart-subtitle">Total sessions per device type</p>
+            </div>
+            <div class="chart-legend-row">
+              <div class="chart-legend">
+                <span class="dot" style="background: #6366f1"></span>
+                Sessions
+              </div>
+            </div>
+          </div>
+          <div class="chart-body">
+            <div class="chart-container">
+              <canvas #conversionBar></canvas>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- Insight cards -->
@@ -85,8 +109,8 @@ Chart.register(...registerables);
         <div class="insight-box insight-success">
           <span class="insight-icon"><app-outline-icon name="check-circle" size="lg"></app-outline-icon></span>
           <div>
-            <strong>Live device split</strong>
-            <p>Session share by device comes from your tracked events. Per-device conversion rates are not yet reported by the API.</p>
+            <strong>Cross-device accounts</strong>
+            <p>When the same logged-in buyer visits from phone or tablet, a new session is counted for that device — Device Insights updates even if they already visited on desktop.</p>
           </div>
         </div>
       </section>
@@ -153,10 +177,76 @@ Chart.register(...registerables);
       margin-bottom: 24px;
     }
 
-    .chart-section { padding: 24px; }
-    .chart-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
-    .chart-title { font-size: 16px; font-weight: 600; color: rgb(var(--color-text-primary)); }
-    .chart-subtitle { font-size: 13px; color: rgb(var(--color-text-muted)); margin-top: 2px; }
+    /* Redesigned Chart Card */
+    .chart-card-clean {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 16px;
+      padding: 24px;
+      margin-bottom: 24px;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    
+    .chart-card-clean:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -2px rgba(0, 0, 0, 0.04);
+    }
+
+    .chart-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+
+    .chart-header h3 {
+      font-size: 16px;
+      font-weight: 600;
+      color: #0f172a;
+      margin: 0;
+    }
+
+    .chart-legend-row {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .chart-legend {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: #475569;
+      font-weight: 500;
+    }
+
+    .chart-legend .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+
+    .chart-legend .dot.dashed {
+      background: transparent !important;
+      border: 2px dashed;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+
+    .chart-body {
+      width: 100%;
+      position: relative;
+    }
+
+    .chart-subtitle {
+      font-size: 13px;
+      color: rgb(var(--color-text-muted));
+      margin-top: 2px;
+    }
 
     .chart-container { height: 280px; position: relative; }
     .donut-container { display: flex; align-items: center; justify-content: center; }
@@ -245,15 +335,34 @@ export class DevicesComponent implements AfterViewInit {
         else this.loadError.set(httpErrorMessage(result.err));
         const rows = result.rows;
         const total = rows.reduce((s, d) => s + d.sessions, 0) || 1;
-        const colors = ['#6366f1', '#a855f7', '#34d399', '#fbbf24', '#60a5fa'];
+        const colorByDevice: Record<string, string> = {
+          Desktop: '#6366f1',
+          Mobile: '#a855f7',
+          Tablet: '#34d399',
+          Unknown: '#fbbf24',
+        };
+        const byType = new Map(
+          rows.map(d => [String(d.deviceType || '').trim(), d.sessions]),
+        );
+        // Always surface Desktop / Mobile / Tablet so a first mobile login for an
+        // existing account is visible in Device Insights (not only Desktop).
+        const ordered = ['Desktop', 'Mobile', 'Tablet'];
+        const extras = [...byType.keys()].filter(
+          k => k && !ordered.some(o => o.toLowerCase() === k.toLowerCase()),
+        );
+        const labels = [...ordered, ...extras];
         this.devices.set(
-          rows.map((d, i) => ({
-            device: d.deviceType,
-            percentage: Math.round((d.sessions / total) * 1000) / 10,
-            sessions: d.sessions,
-            conversionRate: 0,
-            color: colors[i % colors.length],
-          })),
+          labels.map(name => {
+            const matchKey = [...byType.keys()].find(k => k.toLowerCase() === name.toLowerCase());
+            const sessions = matchKey != null ? (byType.get(matchKey) ?? 0) : 0;
+            return {
+              device: name,
+              percentage: Math.round((sessions / total) * 1000) / 10,
+              sessions,
+              conversionRate: 0,
+              color: colorByDevice[name] ?? '#60a5fa',
+            };
+          }),
         );
         queueMicrotask(() => this.syncCharts());
       });
@@ -318,13 +427,15 @@ export class DevicesComponent implements AfterViewInit {
             labels: { color: 'rgb(148, 158, 188)', font: { family: 'Inter', size: 12 }, padding: 20, boxWidth: 12, boxHeight: 12, borderRadius: 3, useBorderRadius: true },
           },
           tooltip: {
-            backgroundColor: 'rgb(22, 28, 44)',
-            borderColor: 'rgb(38, 48, 72)',
+            backgroundColor: '#ffffff',
+            titleColor: '#0f172a',
+            bodyColor: '#334155',
+            borderColor: '#cbd5e1',
             borderWidth: 1,
             cornerRadius: 8,
             padding: 12,
-            titleColor: '#fff',
-            bodyColor: 'rgb(148, 158, 188)',
+            titleFont: { family: 'Inter', size: 13, weight: 700 },
+            bodyFont: { family: 'Inter', size: 12 },
             callbacks: {
               label: c => {
                 const i = c.dataIndex;
@@ -359,25 +470,43 @@ export class DevicesComponent implements AfterViewInit {
         }],
       },
       options: {
-        responsive: true, maintainAspectRatio: false,
+        responsive: true,
+        maintainAspectRatio: false,
         plugins: {
           legend: { display: false },
           tooltip: {
-            backgroundColor: 'rgb(22, 28, 44)',
-            borderColor: 'rgb(38, 48, 72)',
+            backgroundColor: '#ffffff',
+            titleColor: '#0f172a',
+            bodyColor: '#334155',
+            borderColor: '#cbd5e1',
             borderWidth: 1,
             cornerRadius: 8,
             padding: 12,
-            titleColor: '#fff',
-            bodyColor: 'rgb(148, 158, 188)',
+            titleFont: { family: 'Inter', size: 13, weight: 700 },
+            bodyFont: { family: 'Inter', size: 12 },
+            displayColors: true,
+            boxWidth: 8,
+            boxHeight: 8,
+            boxPadding: 4,
+            usePointStyle: true
           },
         },
         scales: {
-          x: { grid: { display: false }, ticks: { color: 'rgb(148, 158, 188)', font: { family: 'Inter', size: 13, weight: 500 } }, border: { display: false } },
+          x: {
+            grid: { display: false },
+            ticks: { color: '#64748b', font: { family: 'Inter', size: 13, weight: 500 } },
+            border: { display: false }
+          },
           y: {
-            grid: { color: 'rgba(38, 48, 72, 0.5)', drawTicks: false },
+            grid: { display: true, color: '#e2e8f0', drawTicks: false },
             border: { display: false },
-            ticks: { color: 'rgb(98, 108, 138)', font: { family: 'Inter', size: 11 } },
+            ticks: {
+              color: '#64748b',
+              font: { family: 'Inter', size: 11 },
+              callback: function(value: any) {
+                return value >= 1000 ? (value / 1000).toFixed(1).replace('.0', '') + 'k' : value;
+              }
+            },
           },
         },
       },

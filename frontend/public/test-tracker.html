@@ -73,6 +73,23 @@
     </div>
   </div>
 
+  <div class="card" id="store" style="display:none;">
+    <p><span class="badge">step 4</span>Mini bookstore (SPA) — auto-tracking demo</p>
+    <p class="muted">This is a single-page app: the links below change the URL <em>without a reload</em> (like React).
+      Each navigation should auto-fire a <code>page_view</code>, and the buttons auto-fire conversions from their
+      text — <strong>no extra code</strong>.</p>
+
+    <div class="row" style="margin-bottom:4px;" data-sc-ignore>
+      <button type="button" class="nav-link" data-path="/">Home</button>
+      <button type="button" class="nav-link" data-path="/book/atomic-habits">Book page</button>
+      <button type="button" class="nav-link" data-path="/cart">Cart</button>
+      <button type="button" class="nav-link" data-path="/checkout">Checkout</button>
+    </div>
+    <p class="muted" style="font-size:12px;">Current route: <code id="route">/</code></p>
+
+    <div id="view"></div>
+  </div>
+
   <div class="card">
     <p><span class="badge">live</span>Last response</p>
     <pre id="log">(none yet)</pre>
@@ -131,8 +148,107 @@
 
         window.tracker.init(key, { endpoint: endpoint, debug: true });
         actionsEl.style.display = '';
+        document.getElementById('store').style.display = '';
+        renderRoute();
         setLog('Initialized', { trackingKey: key, endpoint: endpoint, note: 'page_view auto-fired on init' });
       }
+
+      // ---- Mini single-page-app router (mimics React Router: pushState, no reload) ----
+      var viewEl = document.getElementById('view');
+      var routeEl = document.getElementById('route');
+
+      function renderRoute() {
+        var path = location.pathname;
+        if (routeEl) routeEl.textContent = path + (location.search || '');
+        if (!viewEl) return;
+        var html = '';
+        if (path.indexOf('/book/') === 0) {
+          html =
+            '<div class="card" style="margin:8px 0 0;">' +
+            '<p><strong>Atomic Habits</strong> — $19.99</p>' +
+            '<div class="row">' +
+            '<button type="button">Add to cart</button>' +
+            '<button type="button" class="primary">Buy now</button>' +
+            '</div></div>';
+        } else if (path === '/cart') {
+          html =
+            '<div class="card" style="margin:8px 0 0;">' +
+            '<p>1 item in your cart — $19.99</p>' +
+            '<div class="row">' +
+            '<button type="button" class="primary">Proceed to checkout</button>' +
+            '</div></div>';
+        } else if (path === '/checkout') {
+          html =
+            '<div class="card" style="margin:8px 0 0;">' +
+            '<p>Payment — total $19.99</p>' +
+            '<p class="muted" style="font-size:12px;">“Place order (fails)” must NOT add a conversion. “Place order (succeeds)” fires order_completed after success.</p>' +
+            '<div class="row">' +
+            '<button type="button" id="btn-fail-order">Place order (fails)</button>' +
+            '<button type="button" class="primary" id="btn-ok-order">Place order (succeeds)</button>' +
+            '</div>' +
+            '<p id="order-msg" class="muted" style="margin-top:8px;"></p>' +
+            '</div>';
+        } else if (path === '/thank-you' || path.indexOf('/order-success') === 0 || /^\/order\/[^/]+$/.test(path)) {
+          html = '<div class="card" style="margin:8px 0 0;"><p class="ok">Order confirmed — thank you!</p><p class="muted">Route <code>' + path + '</code> should auto-count as a purchase conversion.</p></div>';
+        } else if (path === '/orders') {
+          html = '<div class="card" style="margin:8px 0 0;"><p>My Orders list (should NOT count as a conversion).</p></div>';
+        } else {
+          html =
+            '<p class="muted" style="margin:8px 0 0;">Welcome to the demo bookstore. Browse a book to start.</p>' +
+            '<div class="row" style="margin-top:8px;">' +
+            '<button type="button" id="btn-login-a">Login as Alice</button>' +
+            '<button type="button" id="btn-login-b">Login as Bob</button>' +
+            '<button type="button" id="btn-logout">Logout</button>' +
+            '</div>';
+        }
+        viewEl.innerHTML = html;
+      }
+
+      document.addEventListener('click', function (ev) {
+        var link = ev.target.closest && ev.target.closest('.nav-link');
+        if (link) {
+          var path = link.getAttribute('data-path') || '/';
+          history.pushState({}, '', path);
+          renderRoute();
+          return;
+        }
+        if (ev.target && ev.target.id === 'btn-fail-order') {
+          // Simulate payment error: button click is only checkout_attempt, not a conversion.
+          var msg = document.getElementById('order-msg');
+          if (msg) { msg.className = 'err'; msg.textContent = 'Payment failed — try again. (no conversion)'; }
+          return;
+        }
+        if (ev.target && ev.target.id === 'btn-ok-order') {
+          // Simulate successful payment like PriceHub: land on /order/:id (auto-tracked as purchase).
+          var orderId = 'O-' + Date.now();
+          history.pushState({}, '', '/order/' + orderId);
+          renderRoute();
+          return;
+        }
+        if (ev.target && ev.target.id === 'btn-login-a') {
+          // Mimic Supabase session so auto-identify works even without calling identify().
+          try {
+            localStorage.setItem('sb-demo-auth-token', JSON.stringify({ user: { id: 'alice-uid-1', email: 'alice@example.com' } }));
+          } catch (_) {}
+          window.tracker && window.tracker.identify('alice-uid-1');
+          setLog('Identified', { userId: 'alice-uid-1' });
+          return;
+        }
+        if (ev.target && ev.target.id === 'btn-login-b') {
+          try {
+            localStorage.setItem('sb-demo-auth-token', JSON.stringify({ user: { id: 'bob-uid-2', email: 'bob@example.com' } }));
+          } catch (_) {}
+          window.tracker && window.tracker.identify('bob-uid-2');
+          setLog('Identified', { userId: 'bob-uid-2' });
+          return;
+        }
+        if (ev.target && ev.target.id === 'btn-logout') {
+          try { localStorage.removeItem('sb-demo-auth-token'); } catch (_) {}
+          window.tracker && window.tracker.reset();
+          setLog('Reset', { note: 'logged out — anonymous clientId remains' });
+        }
+      });
+      window.addEventListener('popstate', renderRoute);
 
       document.getElementById('btn-init').onclick = start;
       document.getElementById('btn-page').onclick = function () { window.tracker && window.tracker.track('page_view'); };

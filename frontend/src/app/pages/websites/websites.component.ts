@@ -7,7 +7,7 @@ import {
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Router, RouterModule } from '@angular/router';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { finalize, catchError } from 'rxjs/operators';
 import { of, interval, Subscription } from 'rxjs';
 import { ActiveSiteService } from '../../services/active-site.service';
@@ -494,6 +494,26 @@ import type { SiteDto, LiveStatsDto, VerifyResultDto } from '../../models/analyt
                         <button class="btn-primary btn-copy" (click)="copyWizardSnippet()">
                           {{ copiedSnippet() ? '✓ Copied' : 'Copy Code' }}
                         </button>
+                      </div>
+
+                      <div class="autotrack-note">
+                        <strong>Paste it once — it tracks your whole site.</strong>
+                        <ul>
+                          <li>Works with React / Next.js and any single-page app: every page change is tracked automatically.</li>
+                          <li>Cart / Buy / Checkout clicks are tracked as intent — <em>not</em> as conversions.</li>
+                          <li>A conversion is counted when the buyer reaches <code>/order/:id</code>, a thank-you page, or you call <code>tracker.track('order_completed', &#123; orderId, value &#125;)</code>.</li>
+                          <li>After login call <code>tracker.identify('buyer_id')</code> (or rely on auto-detect for Supabase sessions) so different accounts count as different visitors. Call <code>tracker.reset()</code> on logout.</li>
+                        </ul>
+                        @if (isLocalhostCollect()) {
+                          <p class="localhost-warn">
+                            <strong>Mobile / other devices will not track</strong> while the snippet points at
+                            <code>localhost</code>. On a phone, localhost is the phone itself — not your PC.
+                            For phone testing on the same Wi‑Fi, replace <code>localhost</code> with your computer’s
+                            LAN IP (e.g. <code>http://192.168.x.x:4200</code>) in both the script <code>src</code>
+                            and <code>endpoint</code>, and run the dashboard/API so they listen on the network.
+                            For a live site (Vercel/Netlify), use a public HTTPS URL for the tracker and collect API.
+                          </p>
+                        }
                       </div>
 
                       <h4 class="instruction-subtitle" style="margin-bottom: 8px;">Visual Diagram:</h4>
@@ -1515,6 +1535,35 @@ import type { SiteDto, LiveStatsDto, VerifyResultDto } from '../../models/analyt
       padding: 8px;
     }
 
+    .autotrack-note {
+      margin: 0 0 14px;
+      padding: 12px 14px;
+      background: #f0f9ff;
+      border: 1px solid #bae6fd;
+      border-radius: 10px;
+      font-size: 12px;
+      color: #0c4a6e;
+      line-height: 1.5;
+    }
+    .autotrack-note strong { display: block; margin-bottom: 6px; color: #075985; }
+    .autotrack-note ul { margin: 0; padding-left: 16px; }
+    .autotrack-note li { margin-bottom: 6px; }
+    .autotrack-note code {
+      background: #0f172a; color: #7dd3fc; padding: 2px 6px;
+      border-radius: 4px; font-size: 11px; word-break: break-all;
+    }
+    .localhost-warn {
+      margin: 12px 0 0;
+      padding: 10px 12px;
+      border-radius: 8px;
+      background: #fff7ed;
+      border: 1px solid #fed7aa;
+      color: #9a3412;
+      font-size: 12px;
+      line-height: 1.55;
+    }
+    .localhost-warn strong { display: inline; color: #9a3412; }
+
     /* Advanced docs */
     .advanced-docs-section {
       border-top: 1px dashed #334155;
@@ -1843,6 +1892,7 @@ export class WebsitesComponent implements OnInit, OnDestroy {
   private readonly api = inject(TrafficApiService);
   readonly activeSite = inject(ActiveSiteService);
   private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
 
   sites = signal<SiteDto[]>([]);
   loading = signal(true);
@@ -1879,6 +1929,18 @@ export class WebsitesComponent implements OnInit, OnDestroy {
     // Sync active site from service
     const active = this.activeSite.site();
     if (active) this.activeSiteId.set(active.siteId);
+
+    // Auto-launch the Connection Setup Wizard on first sign-up (?setup=1) so new users
+    // start by connecting a website instead of a demo walkthrough.
+    if (this.route.snapshot.queryParamMap.get('setup') === '1') {
+      this.openWizard();
+      // Strip the flag so a refresh doesn't reopen the wizard.
+      void this.router.navigate([], {
+        relativeTo: this.route,
+        queryParams: {},
+        replaceUrl: true,
+      });
+    }
   }
 
   ngOnDestroy(): void {
@@ -1930,6 +1992,8 @@ export class WebsitesComponent implements OnInit, OnDestroy {
   closeWizard(): void {
     this.wizardVisible.set(false);
     this.loadSites();
+    // Refresh the header switcher, preferring the site that was just set up (if it completed).
+    this.activeSite.refresh(this.createdSite()?.siteId);
   }
 
   validateUrl(): void {
@@ -1981,8 +2045,9 @@ export class WebsitesComponent implements OnInit, OnDestroy {
     this.adding.set(true);
     this.addError.set('');
     
-    // Register the site
-    this.activeSite.register(this.wizardUrl().trim(), this.wizardSiteName().trim(), this.selectedPlatform()).pipe(
+    // Register the site, but keep it out of the connected list until the wizard is
+    // fully completed (verified). completeSetup=false marks it pending.
+    this.activeSite.register(this.wizardUrl().trim(), this.wizardSiteName().trim(), this.selectedPlatform(), false).pipe(
       finalize(() => this.adding.set(false))
     ).subscribe({
       next: site => {
@@ -2042,10 +2107,16 @@ export class WebsitesComponent implements OnInit, OnDestroy {
   getSnippetForSite(site: SiteDto): string {
     const origin = this.collectUrl();
     const src = this.trackerScriptSrc();
-    return `<script src="${src}" defer></script>
-<script>
-  tracker.init('${site.trackingKey}', { endpoint: '${origin}' });
-</script>`;
+    // Config-first pattern: setting window.scribeCountTracking before the (deferred) SDK
+    // loads means the snippet works no matter the script execution order, and the SDK
+    // auto-initializes on load. Handles SPA route changes + conversions automatically.
+    return `<script>
+  window.scribeCountTracking = {
+    trackingKey: '${site.trackingKey}',
+    endpoint: '${origin}'
+  };
+</script>
+<script src="${src}" defer></script>`;
   }
 
   getReactSnippet(site: SiteDto): string {
@@ -2068,6 +2139,13 @@ useEffect(() => {
   collectUrl(): string {
     if (typeof window === 'undefined') return '/api/collect';
     return `${window.location.origin}/api/collect`;
+  }
+
+  /** Snippet uses this PC's localhost — phones/other devices cannot reach it. */
+  isLocalhostCollect(): boolean {
+    if (typeof window === 'undefined') return false;
+    const h = window.location.hostname;
+    return h === 'localhost' || h === '127.0.0.1';
   }
 
   trackerScriptSrc(): string {

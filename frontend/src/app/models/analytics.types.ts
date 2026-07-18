@@ -50,6 +50,8 @@ export interface CountryPointDto {
 export interface ReferrerPointDto {
   source: string;
   visits: number;
+  engagementRate: number;
+  conversionRate: number;
 }
 
 export interface CampaignPointDto {
@@ -71,6 +73,14 @@ export interface HeatmapPointDto {
   y: number;
   count: number;
   avgScrollDepth: number;
+}
+
+export interface ScrollDepthPointDto {
+  depth: number;
+  reached: number;
+  reachPercent: number;
+  label: string;
+  hint: string;
 }
 
 export interface SiteDto {

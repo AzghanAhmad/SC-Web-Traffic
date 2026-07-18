@@ -56,6 +56,13 @@ public sealed class Site
     /// </summary>
     [MaxLength(64)]
     public string TrackingKey { get; set; } = string.Empty;
+
+    /// <summary>
+    /// True once the connection setup wizard has been completed (verified) for this site.
+    /// Sites still mid-wizard (registered for the snippet, but not verified) stay false and are
+    /// hidden from the connected-websites list until setup finishes.
+    /// </summary>
+    public bool SetupCompleted { get; set; }
 }
 
 public sealed class Visitor

@@ -146,6 +146,90 @@ public sealed class TokenService(IConfiguration configuration) : ITokenService
     }
 }
 
+internal static class TrafficAttribution
+{
+    public static bool IsUnattributed(string? source)
+    {
+        if (string.IsNullOrWhiteSpace(source)) return true;
+        return source.Equals("direct", StringComparison.OrdinalIgnoreCase)
+               || source.Equals("none", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static string PreferDisplaySource(string? source, string? referrer)
+    {
+        if (!IsUnattributed(source))
+            return PrettySourceLabel(source!);
+
+        var host = HostFromUrl(referrer);
+        if (!string.IsNullOrWhiteSpace(host))
+            return PrettySourceLabel(host);
+
+        return "Direct traffic";
+    }
+
+    public static string? HostFromUrl(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return null;
+        if (!Uri.TryCreate(url.Trim(), UriKind.Absolute, out var uri)) return null;
+        if (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps) return null;
+        var host = uri.Host?.Trim().ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(host)) return null;
+        if (host.StartsWith("www.", StringComparison.Ordinal)) host = host[4..];
+        return host;
+    }
+
+    public static string PrettySourceLabel(string raw)
+    {
+        var s = (raw ?? string.Empty).Trim().ToLowerInvariant();
+        if (string.IsNullOrEmpty(s)) return string.Empty;
+        if (s.StartsWith("www.", StringComparison.Ordinal)) s = s[4..];
+        return s switch
+        {
+            "google" or "google.com" or "google.co.uk" or "google.ca" => "Google",
+            "bing" or "bing.com" => "Bing",
+            "yahoo" or "yahoo.com" => "Yahoo",
+            "facebook" or "facebook.com" or "fb.com" or "m.facebook.com" or "l.facebook.com" => "Facebook",
+            "instagram" or "instagram.com" or "l.instagram.com" => "Instagram",
+            "twitter" or "twitter.com" or "x.com" or "t.co" => "X / Twitter",
+            "linkedin" or "linkedin.com" or "lnkd.in" => "LinkedIn",
+            "youtube" or "youtube.com" or "youtu.be" => "YouTube",
+            "reddit" or "reddit.com" => "Reddit",
+            "tiktok" or "tiktok.com" => "TikTok",
+            "pinterest" or "pinterest.com" => "Pinterest",
+            "duckduckgo" or "duckduckgo.com" => "DuckDuckGo",
+            "localhost" or "127.0.0.1" => "Local / Dev",
+            _ => char.ToUpperInvariant(s[0]) + (s.Length > 1 ? s[1..] : string.Empty)
+        };
+    }
+
+    /// <summary>
+    /// Reads campaign name from ?utm_campaign= or ?campaign= (e.g. /catalog?campaign=Flash%20Friday).
+    /// </summary>
+    public static string? CampaignFromPageUrl(string? pageUrl)
+    {
+        if (string.IsNullOrWhiteSpace(pageUrl) || !Uri.TryCreate(pageUrl.Trim(), UriKind.Absolute, out var uri))
+            return null;
+        var query = uri.Query;
+        if (string.IsNullOrEmpty(query)) return null;
+
+        string? utm = null;
+        string? campaign = null;
+        foreach (var part in query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var eq = part.IndexOf('=');
+            var key = Uri.UnescapeDataString(eq >= 0 ? part[..eq] : part).Trim();
+            var val = eq >= 0
+                ? Uri.UnescapeDataString(part[(eq + 1)..].Replace('+', ' ')).Trim()
+                : string.Empty;
+            if (string.IsNullOrEmpty(val)) continue;
+            if (key.Equals("utm_campaign", StringComparison.OrdinalIgnoreCase)) utm = val;
+            else if (key.Equals("campaign", StringComparison.OrdinalIgnoreCase)) campaign = val;
+        }
+
+        return !string.IsNullOrWhiteSpace(utm) ? utm : campaign;
+    }
+}
+
 public sealed class EventCollectionService(ITrafficDbContext db, IIpCountryResolver countryResolver) : IEventCollectionService
 {
     public async Task<EventCollectionResult> CollectAsync(
@@ -181,7 +265,7 @@ public sealed class EventCollectionService(ITrafficDbContext db, IIpCountryResol
         }
 
         var now = request.Timestamp?.ToUniversalTime() ?? DateTime.UtcNow;
-        var anonId = BuildAnonymousId(ipAddress, userAgent);
+        var anonId = ResolveVisitorKey(request, ipAddress, userAgent);
         var visitor = await db.Visitors
             .OrderByDescending(x => x.LastSeenAt)
             .FirstOrDefaultAsync(x => x.SiteId == siteId && x.AnonymousId == anonId, cancellationToken);
@@ -202,38 +286,84 @@ public sealed class EventCollectionService(ITrafficDbContext db, IIpCountryResol
             visitor.LastSeenAt = now;
         }
 
+        var detectedDevice = DetectDevice(userAgent, request.Metadata);
         var session = await db.Sessions
             .OrderByDescending(x => x.LastActivityAt)
             .FirstOrDefaultAsync(x => x.SiteId == siteId && x.VisitorId == visitor.VisitorId && x.EndedAt == null, cancellationToken);
 
-        if (session is null || session.LastActivityAt < DateTime.UtcNow.AddMinutes(-30))
+        // Same account on a different device (e.g. desktop → mobile login) must start a new
+        // session so Device Insights counts Mobile/Tablet separately instead of sticking to Desktop.
+        var sessionTimedOut = session is not null && session.LastActivityAt < DateTime.UtcNow.AddMinutes(-30);
+        var deviceChanged = session is not null && session.DeviceType != detectedDevice
+            && detectedDevice != DeviceType.Unknown;
+
+        if (session is null || sessionTimedOut || deviceChanged)
         {
+            if (session is not null && session.EndedAt == null)
+                session.EndedAt = now;
+
             var metaCountry = TryMetadataCountryCode(request.Metadata);
             var country = await countryResolver
                 .ResolveAsync(ipAddress, countryCodeHint, metaCountry, cancellationToken)
                 .ConfigureAwait(false);
+            var attr = ResolveSource(request.Metadata, referrer);
+            var refUrl = ResolveReferrerUrl(request.Metadata, referrer);
             session = new Session
             {
                 SiteId = siteId,
                 VisitorId = visitor.VisitorId,
                 StartedAt = now,
                 LastActivityAt = now,
-                DeviceType = DetectDevice(userAgent),
+                DeviceType = detectedDevice,
                 Country = country,
-                Referrer = referrer ?? string.Empty,
-                Source = InferSource(referrer),
-                Medium = string.IsNullOrWhiteSpace(referrer) ? "none" : "referral",
-                Campaign = ExtractCampaign(request.Metadata)
+                Referrer = refUrl,
+                Source = string.IsNullOrWhiteSpace(attr.Source) ? "direct" : attr.Source,
+                Medium = attr.Medium,
+                Campaign = ExtractCampaign(request.Metadata, request.PageUrl)
             };
             await db.AddAsync(session, cancellationToken);
         }
         else
         {
             session.LastActivityAt = now;
+            // Upgrade attribution if the session was opened as direct but later pageviews carry UTM/referrer.
+            if (TrafficAttribution.IsUnattributed(session.Source))
+            {
+                var attr = ResolveSource(request.Metadata, referrer);
+                if (!TrafficAttribution.IsUnattributed(attr.Source))
+                {
+                    session.Source = attr.Source;
+                    session.Medium = attr.Medium;
+                }
+                var refUrl = ResolveReferrerUrl(request.Metadata, referrer);
+                if (string.IsNullOrWhiteSpace(session.Referrer) && !string.IsNullOrWhiteSpace(refUrl))
+                    session.Referrer = refUrl;
+            }
+            if (string.IsNullOrWhiteSpace(session.Campaign))
+            {
+                var camp = ExtractCampaign(request.Metadata, request.PageUrl);
+                if (!string.IsNullOrWhiteSpace(camp)) session.Campaign = camp;
+            }
         }
 
         var safeMetadata = JsonSerializer.Serialize(request.Metadata ?? new Dictionary<string, object?>());
         var eventName = request.Metadata?.TryGetValue("eventName", out var n) == true ? n?.ToString() ?? request.EventType.ToString() : request.EventType.ToString();
+        var isDwellUpdate = request.EventType == EventType.PageView
+            && string.Equals(TryMetaString(request.Metadata, "dwellUpdate"), "true", StringComparison.OrdinalIgnoreCase);
+
+        if (isDwellUpdate)
+        {
+            var timeOnPage = TryDouble(request.Metadata, "timeOnPage");
+            var existing = await db.PageViews
+                .Where(p => p.SessionId == session.SessionId && p.PageUrl == request.PageUrl)
+                .OrderByDescending(p => p.Timestamp)
+                .FirstOrDefaultAsync(cancellationToken);
+            if (existing is not null && timeOnPage > existing.TimeOnPage)
+                existing.TimeOnPage = timeOnPage;
+            await db.SaveChangesAsync(cancellationToken);
+            return new EventCollectionResult(Guid.Empty, session.SessionId, visitor.VisitorId);
+        }
+
         var evt = new TrafficEvent
         {
             SiteId = siteId,
@@ -259,16 +389,68 @@ public sealed class EventCollectionService(ITrafficDbContext db, IIpCountryResol
             }, cancellationToken);
         }
 
+        // Only successful purchases (and explicit signups) become Conversion rows.
+        // Buy/checkout clicks are engagement events — not conversions.
         if (request.EventType == EventType.Conversion)
         {
-            await db.AddAsync(new Conversion
+            var convType = TryParseConversionType(request.Metadata);
+            if (convType is ConversionType.Purchase or ConversionType.Signup)
             {
-                SiteId = siteId,
-                SessionId = session.SessionId,
-                Type = ParseConversionType(request.Metadata),
-                Value = TryDecimal(request.Metadata, "value"),
-                Timestamp = now
-            }, cancellationToken);
+                var shouldRecord = true;
+                if (convType == ConversionType.Purchase)
+                {
+                    // Dedupe ONLY exact duplicate fires for the SAME visitor
+                    // (double thank-you, double track). Never suppress another account's purchase.
+                    var orderId = TryMetaString(request.Metadata, "orderId");
+                    var purchaseNonce = TryMetaString(request.Metadata, "purchaseNonce");
+                    var dedupeKey = !string.IsNullOrWhiteSpace(orderId)
+                        ? orderId.Trim()
+                        : purchaseNonce?.Trim();
+
+                    if (!string.IsNullOrWhiteSpace(dedupeKey))
+                    {
+                        var recentMeta = await db.Events
+                            .AsNoTracking()
+                            .Where(e =>
+                                e.SiteId == siteId
+                                && e.VisitorId == visitor.VisitorId
+                                && e.EventName == "order_completed"
+                                && e.EventId != evt.EventId)
+                            .OrderByDescending(e => e.Timestamp)
+                            .Take(40)
+                            .Select(e => e.Metadata)
+                            .ToListAsync(cancellationToken);
+                        shouldRecord = !recentMeta.Any(m =>
+                            !string.IsNullOrEmpty(m) &&
+                            m.Contains(dedupeKey, StringComparison.Ordinal));
+                    }
+                    else
+                    {
+                        // No orderId/nonce: only collapse rapid double-fires (same visitor, <20s).
+                        // Do NOT block the whole session — that hid other buyers' conversions.
+                        var windowStart = now.AddSeconds(-20);
+                        shouldRecord = !await db.Conversions
+                            .AsNoTracking()
+                            .AnyAsync(c =>
+                                c.SiteId == siteId
+                                && c.SessionId == session.SessionId
+                                && c.Type == ConversionType.Purchase
+                                && c.Timestamp >= windowStart, cancellationToken);
+                    }
+                }
+
+                if (shouldRecord)
+                {
+                    await db.AddAsync(new Conversion
+                    {
+                        SiteId = siteId,
+                        SessionId = session.SessionId,
+                        Type = convType.Value,
+                        Value = TryDecimal(request.Metadata, "value"),
+                        Timestamp = now
+                    }, cancellationToken);
+                }
+            }
         }
 
         if (request.EventType is EventType.Click or EventType.Scroll)
@@ -280,7 +462,7 @@ public sealed class EventCollectionService(ITrafficDbContext db, IIpCountryResol
                 X = (int)TryDouble(request.Metadata, "x"),
                 Y = (int)TryDouble(request.Metadata, "y"),
                 ScrollDepth = (int)TryDouble(request.Metadata, "scrollDepth"),
-                DeviceType = DetectDevice(userAgent),
+                DeviceType = detectedDevice,
                 Timestamp = now
             }, cancellationToken);
         }
@@ -288,6 +470,53 @@ public sealed class EventCollectionService(ITrafficDbContext db, IIpCountryResol
         await db.SaveChangesAsync(cancellationToken);
         return new EventCollectionResult(evt.EventId, session.SessionId, visitor.VisitorId);
     }
+
+    /// <summary>
+    /// Prefer logged-in account id, then browser clientId, then IP+UA fingerprint.
+    /// Different accounts on the same device therefore become different visitors.
+    /// </summary>
+    private static string ResolveVisitorKey(CollectEventRequest request, string ipAddress, string userAgent)
+    {
+        var userId = TryMetaString(request.Metadata, "userId")
+            ?? TryMetaString(request.Metadata, "UserId");
+        if (!string.IsNullOrWhiteSpace(userId))
+            return "u:" + TruncateId(userId.Trim(), 90);
+
+        var clientId = TryMetaString(request.Metadata, "clientId")
+            ?? TryMetaString(request.Metadata, "ClientId")
+            ?? TryMetaString(request.Metadata, "anonymousId");
+        if (!string.IsNullOrWhiteSpace(clientId))
+            return "c:" + TruncateId(clientId.Trim(), 90);
+
+        return "d:" + BuildAnonymousId(ipAddress, userAgent);
+    }
+
+    private static string TruncateId(string value, int maxLen) =>
+        value.Length <= maxLen ? value : value[..maxLen];
+
+    private static string? TryMetaString(Dictionary<string, object?>? metadata, string key)
+    {
+        if (metadata is null) return null;
+        if (!metadata.TryGetValue(key, out var v) || v is null) return null;
+
+        // ASP.NET JSON often deserializes dictionary values as JsonElement.
+        if (v is JsonElement je)
+        {
+            return je.ValueKind switch
+            {
+                JsonValueKind.String => NullIfEmpty(je.GetString()),
+                JsonValueKind.Number => NullIfEmpty(je.ToString()),
+                JsonValueKind.True => "true",
+                JsonValueKind.False => "false",
+                _ => NullIfEmpty(je.ToString())
+            };
+        }
+
+        return NullIfEmpty(v.ToString()?.Trim());
+    }
+
+    private static string? NullIfEmpty(string? s) =>
+        string.IsNullOrWhiteSpace(s) ? null : s.Trim();
 
     private static string? TryMetadataCountryCode(Dictionary<string, object?>? metadata)
     {
@@ -300,51 +529,110 @@ public sealed class EventCollectionService(ITrafficDbContext db, IIpCountryResol
     }
 
     private static string BuildAnonymousId(string ipAddress, string userAgent) => $"{ipAddress}:{userAgent}".GetHashCode().ToString("X");
-    private static DeviceType DetectDevice(string userAgent) => userAgent.ToLowerInvariant() switch
+
+    /// <summary>
+    /// Classify Desktop / Mobile / Tablet from User-Agent, with optional metadata override
+    /// (deviceType / device) for proxies or test harnesses that strip the real UA.
+    /// </summary>
+    private static DeviceType DetectDevice(string userAgent, Dictionary<string, object?>? metadata = null)
     {
-        var s when s.Contains("mobile") => DeviceType.Mobile,
-        var s when s.Contains("tablet") || s.Contains("ipad") => DeviceType.Tablet,
-        var s when string.IsNullOrWhiteSpace(s) => DeviceType.Unknown,
-        _ => DeviceType.Desktop
-    };
-    private static string InferSource(string? referrer)
-    {
-        if (string.IsNullOrWhiteSpace(referrer)) return "direct";
-        if (!Uri.TryCreate(referrer, UriKind.Absolute, out var uri) || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
-            return "direct";
-        return string.IsNullOrWhiteSpace(uri.Host) ? "direct" : uri.Host;
+        var hint = TryMetaString(metadata, "deviceType") ?? TryMetaString(metadata, "device");
+        if (!string.IsNullOrWhiteSpace(hint))
+        {
+            var h = hint.Trim().ToLowerInvariant();
+            if (h is "mobile" or "phone" or "smartphone") return DeviceType.Mobile;
+            if (h is "tablet" or "ipad") return DeviceType.Tablet;
+            if (h is "desktop" or "pc" or "computer") return DeviceType.Desktop;
+        }
+
+        if (string.IsNullOrWhiteSpace(userAgent)) return DeviceType.Unknown;
+        var s = userAgent.ToLowerInvariant();
+
+        // Tablets before phones: Android tablets usually omit "Mobile"; iPad may include it.
+        if (s.Contains("ipad") || s.Contains("tablet") || s.Contains("kindle")
+            || (s.Contains("android") && !s.Contains("mobile")))
+            return DeviceType.Tablet;
+
+        if (s.Contains("mobi") || s.Contains("iphone") || s.Contains("ipod")
+            || s.Contains("android") || s.Contains("windows phone") || s.Contains("blackberry")
+            || s.Contains("opera mini") || s.Contains("opera mobi"))
+            return DeviceType.Mobile;
+
+        return DeviceType.Desktop;
     }
-    private static string ExtractCampaign(Dictionary<string, object?>? metadata) =>
-        metadata?.TryGetValue("campaign", out var c) == true ? c?.ToString() ?? string.Empty : string.Empty;
+
+    private readonly record struct SourceAttr(string Source, string Medium);
+
+    /// <summary>
+    /// Prefer UTM → page/document referrer → HTTP Referer header → (empty = unattributed).
+    /// </summary>
+    private static SourceAttr ResolveSource(Dictionary<string, object?>? metadata, string? headerReferrer)
+    {
+        var utmSource = TryMetaString(metadata, "utm_source") ?? TryMetaString(metadata, "source");
+        if (!string.IsNullOrWhiteSpace(utmSource))
+        {
+            var medium = TryMetaString(metadata, "utm_medium") ?? "campaign";
+            return new SourceAttr(TrafficAttribution.PrettySourceLabel(utmSource), medium);
+        }
+
+        var refUrl = ResolveReferrerUrl(metadata, headerReferrer);
+        var host = TrafficAttribution.HostFromUrl(refUrl);
+        if (!string.IsNullOrWhiteSpace(host))
+            return new SourceAttr(TrafficAttribution.PrettySourceLabel(host), "referral");
+
+        return new SourceAttr(string.Empty, "none");
+    }
+
+    private static string ResolveReferrerUrl(Dictionary<string, object?>? metadata, string? headerReferrer)
+    {
+        var fromMeta = TryMetaString(metadata, "referrer") ?? TryMetaString(metadata, "documentReferrer");
+        if (!string.IsNullOrWhiteSpace(fromMeta)) return fromMeta.Trim();
+        return headerReferrer?.Trim() ?? string.Empty;
+    }
+
+    private static string ExtractCampaign(Dictionary<string, object?>? metadata, string? pageUrl = null)
+    {
+        var camp = TryMetaString(metadata, "utm_campaign")
+            ?? TryMetaString(metadata, "campaign")
+            ?? TryMetaString(metadata, "Campaign");
+        if (!string.IsNullOrWhiteSpace(camp)) return camp.Trim();
+        return TrafficAttribution.CampaignFromPageUrl(pageUrl) ?? string.Empty;
+    }
+
     private static double TryDouble(Dictionary<string, object?>? metadata, string key) =>
         metadata?.TryGetValue(key, out var v) == true && double.TryParse(v?.ToString(), out var result) ? result : 0;
     private static decimal? TryDecimal(Dictionary<string, object?>? metadata, string key) =>
         metadata?.TryGetValue(key, out var v) == true && decimal.TryParse(v?.ToString(), out var result) ? result : null;
-    private static ConversionType ParseConversionType(Dictionary<string, object?>? metadata)
+    private static ConversionType? TryParseConversionType(Dictionary<string, object?>? metadata)
     {
         var value = metadata?.TryGetValue("type", out var t) == true ? t?.ToString() : null;
-        if (Enum.TryParse<ConversionType>(value, true, out var parsed)) return parsed;
+        if (Enum.TryParse<ConversionType>(value, true, out var parsed)
+            && parsed is ConversionType.Purchase or ConversionType.Signup)
+            return parsed;
 
         var eventName = metadata?.TryGetValue("eventName", out var n) == true ? n?.ToString() : null;
         return eventName?.Trim().ToLowerInvariant() switch
         {
-            "checkout_started" => ConversionType.BuyClick,
-            "order_completed" => ConversionType.Purchase,
-            _ => ConversionType.Signup,
+            "order_completed" or "purchase" or "order_placed" or "sale" or "payment_completed" => ConversionType.Purchase,
+            "signup" or "sign_up" or "lead" or "register" or "subscribe" => ConversionType.Signup,
+            _ => null,
         };
     }
 }
 
 public sealed class AnalyticsService(ITrafficDbContext db) : IAnalyticsService
 {
-    public async Task<TrafficOverviewResponse> GetOverviewAsync(Guid siteId, int days, CancellationToken cancellationToken = default)
+    public async Task<TrafficOverviewResponse> GetOverviewAsync(Guid siteId, int days, int timezoneOffsetMinutes = 0, CancellationToken cancellationToken = default)
     {
         var since = DateTime.UtcNow.AddDays(-days);
         var sessions = db.Sessions.Where(x => x.SiteId == siteId && x.StartedAt >= since);
 
         var visitors = await db.Visitors.CountAsync(x => x.SiteId == siteId && x.LastSeenAt >= since, cancellationToken);
         var sessionsCount = await sessions.CountAsync(cancellationToken);
-        var conversionsCount = await db.Conversions.CountAsync(x => x.SiteId == siteId && x.Timestamp >= since, cancellationToken);
+        // Dashboard "Conversions" = successful purchases only (not buy/checkout clicks).
+        var conversionsCount = await db.Conversions.CountAsync(
+            x => x.SiteId == siteId && x.Timestamp >= since && x.Type == ConversionType.Purchase,
+            cancellationToken);
 
         // 0–1: share of sessions with meaningful interaction (first-party scroll/click, depth, multi-page, dwell, or conversion).
         double engagementRate = 0;
@@ -382,50 +670,112 @@ public sealed class AnalyticsService(ITrafficDbContext db) : IAnalyticsService
             engagementRate = (double)engaged.Count / sessionsCount;
         }
 
-        var visitorDays = await db.Visitors
-            .Where(x => x.SiteId == siteId && x.LastSeenAt >= since)
-            .GroupBy(x => x.LastSeenAt.Date)
-            .Select(g => new { Day = g.Key, Count = g.Count() })
-            .ToListAsync(cancellationToken);
+        var visitorTrend = new Dictionary<DateTime, int>();
+        var sessionTrend = new Dictionary<DateTime, int>();
+        var pageViewTrend = new Dictionary<DateTime, int>();
+        var conversionTrend = new Dictionary<DateTime, int>();
+        var periods = new List<DateTime>();
+        var now = DateTime.UtcNow;
 
-        var sessionDays = await db.Sessions
-            .Where(x => x.SiteId == siteId && x.StartedAt >= since)
-            .GroupBy(x => x.StartedAt.Date)
-            .Select(g => new { Day = g.Key, Count = g.Count() })
-            .ToListAsync(cancellationToken);
+        if (days == 1)
+        {
+            // Hourly trend over the last 24 hours in local time
+            var localNow = now.AddMinutes(timezoneOffsetMinutes);
+            for (int i = 23; i >= 0; i--)
+            {
+                var dt = localNow.AddHours(-i);
+                periods.Add(new DateTime(dt.Year, dt.Month, dt.Day, dt.Hour, 0, 0, DateTimeKind.Utc));
+            }
 
-        var pageViewDays = await db.PageViews
-            .Where(x => x.SiteId == siteId && x.Timestamp >= since)
-            .GroupBy(x => x.Timestamp.Date)
-            .Select(g => new { Day = g.Key, Count = g.Count() })
-            .ToListAsync(cancellationToken);
+            var visitorHours = await db.Visitors
+                .Where(x => x.SiteId == siteId && x.LastSeenAt >= since)
+                .Select(x => new { LocalTime = x.LastSeenAt.AddMinutes(timezoneOffsetMinutes) })
+                .GroupBy(x => new { x.LocalTime.Date, x.LocalTime.Hour })
+                .Select(g => new { Date = g.Key.Date, Hour = g.Key.Hour, Count = g.Count() })
+                .ToListAsync(cancellationToken);
+            foreach (var x in visitorHours)
+                visitorTrend[new DateTime(x.Date.Year, x.Date.Month, x.Date.Day, x.Hour, 0, 0, DateTimeKind.Utc)] = x.Count;
 
-        var conversionDays = await db.Conversions
-            .Where(x => x.SiteId == siteId && x.Timestamp >= since)
-            .GroupBy(x => x.Timestamp.Date)
-            .Select(g => new { Day = g.Key, Count = g.Count() })
-            .ToListAsync(cancellationToken);
+            var sessionHours = await db.Sessions
+                .Where(x => x.SiteId == siteId && x.StartedAt >= since)
+                .Select(x => new { LocalTime = x.StartedAt.AddMinutes(timezoneOffsetMinutes) })
+                .GroupBy(x => new { x.LocalTime.Date, x.LocalTime.Hour })
+                .Select(g => new { Date = g.Key.Date, Hour = g.Key.Hour, Count = g.Count() })
+                .ToListAsync(cancellationToken);
+            foreach (var x in sessionHours)
+                sessionTrend[new DateTime(x.Date.Year, x.Date.Month, x.Date.Day, x.Hour, 0, 0, DateTimeKind.Utc)] = x.Count;
 
-        var allDays = visitorDays.Select(x => x.Day)
-            .Union(sessionDays.Select(x => x.Day))
-            .Union(pageViewDays.Select(x => x.Day))
-            .Union(conversionDays.Select(x => x.Day))
-            .Distinct()
-            .OrderBy(d => d)
-            .ToList();
+            var pageViewHours = await db.PageViews
+                .Where(x => x.SiteId == siteId && x.Timestamp >= since)
+                .Select(x => new { LocalTime = x.Timestamp.AddMinutes(timezoneOffsetMinutes) })
+                .GroupBy(x => new { x.LocalTime.Date, x.LocalTime.Hour })
+                .Select(g => new { Date = g.Key.Date, Hour = g.Key.Hour, Count = g.Count() })
+                .ToListAsync(cancellationToken);
+            foreach (var x in pageViewHours)
+                pageViewTrend[new DateTime(x.Date.Year, x.Date.Month, x.Date.Day, x.Hour, 0, 0, DateTimeKind.Utc)] = x.Count;
 
-        var vd = visitorDays.ToDictionary(x => x.Day, x => x.Count);
-        var sd = sessionDays.ToDictionary(x => x.Day, x => x.Count);
-        var pvd = pageViewDays.ToDictionary(x => x.Day, x => x.Count);
-        var cd = conversionDays.ToDictionary(x => x.Day, x => x.Count);
+            var conversionHours = await db.Conversions
+                .Where(x => x.SiteId == siteId && x.Timestamp >= since && x.Type == ConversionType.Purchase)
+                .Select(x => new { LocalTime = x.Timestamp.AddMinutes(timezoneOffsetMinutes) })
+                .GroupBy(x => new { x.LocalTime.Date, x.LocalTime.Hour })
+                .Select(g => new { Date = g.Key.Date, Hour = g.Key.Hour, Count = g.Count() })
+                .ToListAsync(cancellationToken);
+            foreach (var x in conversionHours)
+                conversionTrend[new DateTime(x.Date.Year, x.Date.Month, x.Date.Day, x.Hour, 0, 0, DateTimeKind.Utc)] = x.Count;
+        }
+        else
+        {
+            // Daily trend in local time
+            var localNow = now.AddMinutes(timezoneOffsetMinutes);
+            for (int i = days - 1; i >= 0; i--)
+            {
+                periods.Add(localNow.Date.AddDays(-i));
+            }
 
-        var trend = allDays
-            .Select(d => new TrendPoint(
-                d.ToString("yyyy-MM-dd"),
-                vd.GetValueOrDefault(d),
-                sd.GetValueOrDefault(d),
-                pvd.GetValueOrDefault(d),
-                cd.GetValueOrDefault(d)))
+            var visitorDays = await db.Visitors
+                .Where(x => x.SiteId == siteId && x.LastSeenAt >= since)
+                .Select(x => new { LocalTime = x.LastSeenAt.AddMinutes(timezoneOffsetMinutes) })
+                .GroupBy(x => x.LocalTime.Date)
+                .Select(g => new { Day = g.Key, Count = g.Count() })
+                .ToListAsync(cancellationToken);
+            foreach (var x in visitorDays)
+                visitorTrend[x.Day] = x.Count;
+
+            var sessionDays = await db.Sessions
+                .Where(x => x.SiteId == siteId && x.StartedAt >= since)
+                .Select(x => new { LocalTime = x.StartedAt.AddMinutes(timezoneOffsetMinutes) })
+                .GroupBy(x => x.LocalTime.Date)
+                .Select(g => new { Day = g.Key, Count = g.Count() })
+                .ToListAsync(cancellationToken);
+            foreach (var x in sessionDays)
+                sessionTrend[x.Day] = x.Count;
+
+            var pageViewDays = await db.PageViews
+                .Where(x => x.SiteId == siteId && x.Timestamp >= since)
+                .Select(x => new { LocalTime = x.Timestamp.AddMinutes(timezoneOffsetMinutes) })
+                .GroupBy(x => x.LocalTime.Date)
+                .Select(g => new { Day = g.Key, Count = g.Count() })
+                .ToListAsync(cancellationToken);
+            foreach (var x in pageViewDays)
+                pageViewTrend[x.Day] = x.Count;
+
+            var conversionDays = await db.Conversions
+                .Where(x => x.SiteId == siteId && x.Timestamp >= since && x.Type == ConversionType.Purchase)
+                .Select(x => new { LocalTime = x.Timestamp.AddMinutes(timezoneOffsetMinutes) })
+                .GroupBy(x => x.LocalTime.Date)
+                .Select(g => new { Day = g.Key, Count = g.Count() })
+                .ToListAsync(cancellationToken);
+            foreach (var x in conversionDays)
+                conversionTrend[x.Day] = x.Count;
+        }
+
+        var trend = periods
+            .Select(p => new TrendPoint(
+                days == 1 ? p.ToString("HH:00") : p.ToString("yyyy-MM-dd"),
+                visitorTrend.GetValueOrDefault(p),
+                sessionTrend.GetValueOrDefault(p),
+                pageViewTrend.GetValueOrDefault(p),
+                conversionTrend.GetValueOrDefault(p)))
             .ToList();
 
         return new TrafficOverviewResponse(visitors, sessionsCount, Math.Round(engagementRate, 4), conversionsCount, trend);
@@ -434,21 +784,25 @@ public sealed class AnalyticsService(ITrafficDbContext db) : IAnalyticsService
     public async Task<IReadOnlyList<SourcePoint>> GetSourcesAsync(Guid siteId, int days, CancellationToken cancellationToken = default)
     {
         var since = DateTime.UtcNow.AddDays(-days);
-        // Avoid translating (count * 100 / total) with a captured int — Pomelo/MySQL often throws at runtime.
-        var groups = await db.Sessions
+        var rows = await db.Sessions
             .AsNoTracking()
             .Where(x => x.SiteId == siteId && x.StartedAt >= since)
-            .GroupBy(x => x.Source)
-            .Select(g => new { Source = g.Key, Count = g.Count() })
+            .Select(x => new { x.Source, x.Referrer })
             .ToListAsync(cancellationToken);
+
+        // Re-derive display labels from Source or Referrer; omit unattributed "direct".
+        var groups = rows
+            .Select(x => TrafficAttribution.PreferDisplaySource(x.Source, x.Referrer))
+            .Where(s => !string.IsNullOrWhiteSpace(s))
+            .GroupBy(s => s, StringComparer.OrdinalIgnoreCase)
+            .Select(g => new { Source = g.Key, Count = g.Count() })
+            .OrderByDescending(x => x.Count)
+            .ToList();
+
         var total = groups.Sum(x => x.Count);
         if (total == 0) return [];
         return groups
-            .OrderByDescending(x => x.Count)
-            .Select(x => new SourcePoint(
-                string.IsNullOrWhiteSpace(x.Source) ? "direct" : x.Source,
-                x.Count,
-                Math.Round((double)x.Count * 100 / total, 2)))
+            .Select(x => new SourcePoint(x.Source, x.Count, Math.Round((double)x.Count * 100 / total, 2)))
             .ToList();
     }
 
@@ -559,90 +913,163 @@ public sealed class AnalyticsService(ITrafficDbContext db) : IAnalyticsService
     public async Task<IReadOnlyList<ReferrerPoint>> GetReferrersAsync(Guid siteId, int days, int take = 20, CancellationToken cancellationToken = default)
     {
         var since = DateTime.UtcNow.AddDays(-days);
-        // Prefer explicit Referrer URL host; fall back to Source/direct so the table is never blank.
-        var rows = await db.Sessions
+        var sessions = await db.Sessions
             .AsNoTracking()
             .Where(x => x.SiteId == siteId && x.StartedAt >= since)
-            .Select(x => new { x.Referrer, x.Source })
+            .Select(x => new { x.SessionId, x.Referrer, x.Source })
             .ToListAsync(cancellationToken);
 
-        var grouped = rows
-            .Select(x => NormalizeReferrerLabel(x.Referrer, x.Source))
-            .Where(x => !string.IsNullOrWhiteSpace(x))
-            .GroupBy(x => x, StringComparer.OrdinalIgnoreCase)
-            .Select(g => new { Referrer = g.Key, Visits = g.Count() })
+        if (sessions.Count == 0) return [];
+
+        var engagedSessionIds = await db.Events
+            .AsNoTracking()
+            .Where(e => e.SiteId == siteId && e.Timestamp >= since
+                        && (e.EventType == EventType.Click || e.EventType == EventType.Scroll))
+            .Select(e => e.SessionId)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+        var engaged = engagedSessionIds.ToHashSet();
+
+        // Multi-page sessions also count as engaged.
+        var multiPage = await db.PageViews
+            .AsNoTracking()
+            .Where(p => p.SiteId == siteId && p.Timestamp >= since)
+            .GroupBy(p => p.SessionId)
+            .Where(g => g.Count() >= 2)
+            .Select(g => g.Key)
+            .ToListAsync(cancellationToken);
+        foreach (var sid in multiPage) engaged.Add(sid);
+
+        var convertedSessionIds = await db.Conversions
+            .AsNoTracking()
+            .Where(c => c.SiteId == siteId && c.Timestamp >= since && c.Type == ConversionType.Purchase)
+            .Select(c => c.SessionId)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+        var converted = convertedSessionIds.ToHashSet();
+
+        var grouped = sessions
+            .Select(x => new
+            {
+                Label = TrafficAttribution.PreferDisplaySource(x.Source, x.Referrer),
+                x.SessionId,
+            })
+            .Where(x => !string.IsNullOrWhiteSpace(x.Label))
+            .GroupBy(x => x.Label, StringComparer.OrdinalIgnoreCase)
+            .Select(g =>
+            {
+                var visits = g.Count();
+                var eng = g.Count(s => engaged.Contains(s.SessionId));
+                var conv = g.Count(s => converted.Contains(s.SessionId));
+                return new ReferrerPoint(
+                    g.Key,
+                    visits,
+                    visits == 0 ? 0 : Math.Round((double)eng * 100 / visits, 1),
+                    visits == 0 ? 0 : Math.Round((double)conv * 100 / visits, 1));
+            })
             .OrderByDescending(x => x.Visits)
             .Take(take)
             .ToList();
 
-        return grouped
-            .Select(x => new ReferrerPoint(x.Referrer, x.Visits))
-            .ToList();
-    }
-
-    private static string NormalizeReferrerLabel(string? referrer, string? source)
-    {
-        // Real referrer URL -> host
-        if (!string.IsNullOrWhiteSpace(referrer) &&
-            Uri.TryCreate(referrer.Trim(), UriKind.Absolute, out var uri) &&
-            !string.IsNullOrWhiteSpace(uri.Host))
-        {
-            return uri.Host.ToLowerInvariant();
-        }
-
-        // Fallback from session.Source (already inferred in collection service)
-        var s = (source ?? string.Empty).Trim();
-        if (string.IsNullOrWhiteSpace(s)) return "direct";
-        if (s.Equals("none", StringComparison.OrdinalIgnoreCase)) return "direct";
-        if (s.Equals("direct", StringComparison.OrdinalIgnoreCase)) return "direct";
-        if (s.Equals("localhost", StringComparison.OrdinalIgnoreCase)) return "localhost";
-        if (s.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase)) return "localhost";
-
-        if (Uri.TryCreate(s.StartsWith("http", StringComparison.OrdinalIgnoreCase) ? s : $"https://{s}", UriKind.Absolute, out var srcUri) &&
-            !string.IsNullOrWhiteSpace(srcUri.Host))
-        {
-            return srcUri.Host.ToLowerInvariant();
-        }
-
-        return s.ToLowerInvariant();
+        return grouped;
     }
 
     public async Task<IReadOnlyList<CampaignPoint>> GetCampaignsAsync(Guid siteId, int days, CancellationToken cancellationToken = default)
     {
         var since = DateTime.UtcNow.AddDays(-days);
-        var sessionRows = await db.Sessions
+        var allSessions = await db.Sessions
             .AsNoTracking()
-            .Where(x => x.SiteId == siteId && x.StartedAt >= since && !string.IsNullOrWhiteSpace(x.Campaign))
+            .Where(x => x.SiteId == siteId && x.StartedAt >= since)
+            .Select(x => new { x.SessionId, x.Campaign })
             .ToListAsync(cancellationToken);
+
+        // Campaigns from ?campaign= / ?utm_campaign= page URLs (e.g. /catalog?campaign=Flash%20Friday).
+        // A session that hits multiple campaign links can contribute to each campaign row.
+        var pageUrls = await db.PageViews
+            .AsNoTracking()
+            .Where(x => x.SiteId == siteId && x.Timestamp >= since
+                        && (x.PageUrl.Contains("campaign=") || x.PageUrl.Contains("utm_campaign=")))
+            .Select(x => new { x.SessionId, x.PageUrl, x.Timestamp })
+            .ToListAsync(cancellationToken);
+
+        // campaign name -> set of session ids
+        var sessionsByCampaign = new Dictionary<string, HashSet<Guid>>(StringComparer.OrdinalIgnoreCase);
+
+        void AddSession(string? name, Guid sessionId)
+        {
+            if (string.IsNullOrWhiteSpace(name) || sessionId == Guid.Empty) return;
+            var key = name.Trim();
+            if (!sessionsByCampaign.TryGetValue(key, out var set))
+            {
+                set = [];
+                sessionsByCampaign[key] = set;
+            }
+            set.Add(sessionId);
+        }
+
+        foreach (var s in allSessions)
+            AddSession(s.Campaign, s.SessionId);
+
+        foreach (var pv in pageUrls)
+            AddSession(TrafficAttribution.CampaignFromPageUrl(pv.PageUrl), pv.SessionId);
+
+        // Primary campaign per session (for conversion attribution + organic bucket):
+        // prefer stored Session.Campaign, else first campaign seen on a page URL.
+        var primaryCampaignBySession = new Dictionary<Guid, string>();
+        foreach (var s in allSessions)
+        {
+            if (!string.IsNullOrWhiteSpace(s.Campaign))
+                primaryCampaignBySession[s.SessionId] = s.Campaign.Trim();
+        }
+        foreach (var pv in pageUrls.OrderBy(x => x.Timestamp))
+        {
+            if (primaryCampaignBySession.ContainsKey(pv.SessionId)) continue;
+            var fromUrl = TrafficAttribution.CampaignFromPageUrl(pv.PageUrl);
+            if (!string.IsNullOrWhiteSpace(fromUrl))
+                primaryCampaignBySession[pv.SessionId] = fromUrl;
+        }
 
         var conversionSessions = await db.Conversions
             .AsNoTracking()
-            .Where(x => x.SiteId == siteId && x.Timestamp >= since)
+            .Where(x => x.SiteId == siteId && x.Timestamp >= since && x.Type == ConversionType.Purchase)
             .Select(x => x.SessionId)
             .ToListAsync(cancellationToken);
 
-        var campaignBySession = sessionRows
-            .GroupBy(x => x.SessionId)
-            .ToDictionary(g => g.Key, g => g.First().Campaign);
-
         var conversionByCampaign = conversionSessions
-            .Select(sid => campaignBySession.TryGetValue(sid, out var campaign) ? campaign : null)
+            .Select(sid => primaryCampaignBySession.TryGetValue(sid, out var campaign) ? campaign : null)
             .Where(c => !string.IsNullOrWhiteSpace(c))
             .GroupBy(c => c!, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.Count(), StringComparer.OrdinalIgnoreCase);
 
-        var rows = sessionRows
-            .GroupBy(x => x.Campaign, StringComparer.OrdinalIgnoreCase)
-            .Select(g => new
-            {
-                Name = g.Key,
-                Visits = g.Count(),
-                Conversions = conversionByCampaign.GetValueOrDefault(g.Key, 0),
-            })
+        var rows = sessionsByCampaign
+            .Select(kv => (
+                Name: kv.Key,
+                Visits: kv.Value.Count,
+                Conversions: conversionByCampaign.GetValueOrDefault(kv.Key, 0)))
             .OrderByDescending(x => x.Visits)
             .ToList();
 
-        return rows.Select(x => new CampaignPoint(x.Name, x.Visits, x.Conversions)).ToList();
+        var attributedSessionIds = primaryCampaignBySession.Keys.ToHashSet();
+        // Also treat any session that hit a campaign URL as attributed (even if multi-touch).
+        foreach (var set in sessionsByCampaign.Values)
+            attributedSessionIds.UnionWith(set);
+
+        var organicSessions = allSessions
+            .Where(s => !attributedSessionIds.Contains(s.SessionId))
+            .Select(s => s.SessionId)
+            .ToList();
+
+        if (organicSessions.Count > 0)
+        {
+            var organicSet = organicSessions.ToHashSet();
+            var organicConv = conversionSessions.Count(sid => organicSet.Contains(sid));
+            rows.Add(("Organic / Direct", organicSessions.Count, organicConv));
+        }
+
+        return rows
+            .OrderByDescending(x => x.Visits)
+            .Select(x => new CampaignPoint(x.Name, x.Visits, x.Conversions))
+            .ToList();
     }
 }
 
@@ -664,17 +1091,21 @@ public sealed class FunnelService(ITrafficDbContext db) : IFunnelService
         if (funnelSteps.Count == 0) return [];
 
         var since = DateTime.UtcNow.AddDays(-days);
-        var pageHits = await db.PageViews
+        // Pull ALL events (not just page views) so a funnel step can be either a page URL/path
+        // (e.g. "/checkout") OR a business event name (e.g. "add_to_cart", "order_completed").
+        var hits = await db.Events
             .AsNoTracking()
             .Where(x => x.SiteId == siteId && x.Timestamp >= since)
             .OrderBy(x => x.SessionId)
             .ThenBy(x => x.Timestamp)
-            .Select(x => new { x.SessionId, x.PageUrl })
+            .Select(x => new { x.SessionId, x.EventName, x.PageUrl })
             .ToListAsync(cancellationToken);
 
-        var chains = pageHits
+        var chains = hits
             .GroupBy(x => x.SessionId)
-            .ToDictionary(g => g.Key, g => g.Select(x => x.PageUrl).ToList());
+            .ToDictionary(
+                g => g.Key,
+                g => g.Select(x => new FunnelToken(x.EventName ?? string.Empty, x.PageUrl ?? string.Empty)).ToList());
 
         var universe = chains.Keys.ToHashSet();
         if (universe.Count == 0)
@@ -718,19 +1149,30 @@ public sealed class FunnelService(ITrafficDbContext db) : IFunnelService
         return result;
     }
 
-    private static bool MatchesOrderedPrefix(IReadOnlyList<string> urls, IReadOnlyList<string> funnelSteps, int stepCount)
+    private readonly record struct FunnelToken(string EventName, string PageUrl);
+
+    private static bool MatchesOrderedPrefix(IReadOnlyList<FunnelToken> tokens, IReadOnlyList<string> funnelSteps, int stepCount)
     {
         if (stepCount <= 0 || stepCount > funnelSteps.Count) return false;
         var u = 0;
         for (var s = 0; s < stepCount; s++)
         {
-            while (u < urls.Count && !UrlMatchesPage(urls[u], funnelSteps[s]))
+            while (u < tokens.Count && !TokenMatchesStep(tokens[u], funnelSteps[s]))
                 u++;
-            if (u >= urls.Count) return false;
+            if (u >= tokens.Count) return false;
             u++;
         }
 
         return true;
+    }
+
+    // A step matches if it equals the event name (e.g. "add_to_cart") or the page URL/path.
+    private static bool TokenMatchesStep(FunnelToken token, string step)
+    {
+        if (!string.IsNullOrEmpty(token.EventName) &&
+            string.Equals(token.EventName, step, StringComparison.OrdinalIgnoreCase))
+            return true;
+        return UrlMatchesPage(token.PageUrl, step);
     }
 
     private static bool UrlMatchesPage(string pageUrl, string step)
@@ -761,6 +1203,107 @@ public sealed class HeatmapService(ITrafficDbContext db) : IHeatmapService
             .Select(x => new HeatmapPointDto(x.X, x.Y, x.Cnt, (int)Math.Round(x.AvgScroll)))
             .ToList();
     }
+
+    public async Task<IReadOnlyList<ScrollDepthPointDto>> GetScrollDepthAsync(
+        Guid siteId,
+        string pageUrl,
+        int days,
+        CancellationToken cancellationToken = default)
+    {
+        var since = DateTime.UtcNow.AddDays(-days);
+
+        var pageViews = await db.PageViews
+            .AsNoTracking()
+            .CountAsync(x => x.SiteId == siteId && x.PageUrl == pageUrl && x.Timestamp >= since, cancellationToken);
+
+        // Tracker scroll milestones are stored as Heatmap rows at (0,0) with depth 25/50/75/100.
+        var milestoneRows = await db.HeatmapData
+            .AsNoTracking()
+            .Where(x =>
+                x.SiteId == siteId
+                && x.PageUrl == pageUrl
+                && x.Timestamp >= since
+                && x.X == 0
+                && x.Y == 0
+                && (x.ScrollDepth == 25 || x.ScrollDepth == 50 || x.ScrollDepth == 75 || x.ScrollDepth == 100))
+            .GroupBy(x => x.ScrollDepth)
+            .Select(g => new { Depth = g.Key, Count = g.Count() })
+            .ToListAsync(cancellationToken);
+
+        // Fallback: older/mixed data without clean (0,0) milestones — snap any scroll depths.
+        if (milestoneRows.Count == 0)
+        {
+            var raw = await db.HeatmapData
+                .AsNoTracking()
+                .Where(x => x.SiteId == siteId && x.PageUrl == pageUrl && x.Timestamp >= since && x.ScrollDepth > 0)
+                .Select(x => x.ScrollDepth)
+                .ToListAsync(cancellationToken);
+
+            milestoneRows = raw
+                .Select(SnapScrollMilestone)
+                .Where(d => d > 0)
+                .GroupBy(d => d)
+                .Select(g => new { Depth = g.Key, Count = g.Count() })
+                .ToList();
+        }
+
+        var hits = new Dictionary<int, int> { [25] = 0, [50] = 0, [75] = 0, [100] = 0 };
+        foreach (var row in milestoneRows)
+        {
+            if (hits.ContainsKey(row.Depth))
+                hits[row.Depth] = row.Count;
+        }
+
+        var baseline = pageViews > 0
+            ? pageViews
+            : Math.Max(1, hits.Values.DefaultIfEmpty(0).Max());
+
+        static double Pct(int reached, int baseCount) =>
+            Math.Round(100.0 * reached / Math.Max(1, baseCount), 1);
+
+        return
+        [
+            new ScrollDepthPointDto(
+                0,
+                baseline,
+                100,
+                "Top of page",
+                "Everyone who opened this page starts here."),
+            new ScrollDepthPointDto(
+                25,
+                hits[25],
+                Pct(hits[25], baseline),
+                "About 25% down",
+                "Visitors who scrolled past the first section of the page."),
+            new ScrollDepthPointDto(
+                50,
+                hits[50],
+                Pct(hits[50], baseline),
+                "Halfway",
+                "Visitors who made it to the middle of the page."),
+            new ScrollDepthPointDto(
+                75,
+                hits[75],
+                Pct(hits[75], baseline),
+                "About 75% down",
+                "Visitors who kept scrolling into the lower content."),
+            new ScrollDepthPointDto(
+                100,
+                hits[100],
+                Pct(hits[100], baseline),
+                "Bottom of page",
+                "Visitors who scrolled all the way to the end."),
+        ];
+    }
+
+    private static int SnapScrollMilestone(int depth) => depth switch
+    {
+        <= 12 => 0,
+        <= 37 => 25,
+        <= 62 => 50,
+        <= 87 => 75,
+        _ => 100
+    };
 }
 
 public sealed class SnapshotService(ITrafficDbContext db) : ISnapshotService

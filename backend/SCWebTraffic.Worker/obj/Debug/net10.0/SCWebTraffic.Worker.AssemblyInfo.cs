@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("SCWebTraffic.Worker")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+3967f831f75050e8c58429df1d51842ba0dd56ea")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+354ca268d25d000cc36280464adc378fe77284be")]
 [assembly: System.Reflection.AssemblyProductAttribute("SCWebTraffic.Worker")]
 [assembly: System.Reflection.AssemblyTitleAttribute("SCWebTraffic.Worker")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

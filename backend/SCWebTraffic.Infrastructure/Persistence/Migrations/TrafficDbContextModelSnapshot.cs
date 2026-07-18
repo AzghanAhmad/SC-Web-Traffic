@@ -276,6 +276,9 @@ namespace SCWebTraffic.Infrastructure.Persistence.Migrations
                     b.Property<int>("Platform")
                         .HasColumnType("int");
 
+                    b.Property<bool>("SetupCompleted")
+                        .HasColumnType("tinyint(1)");
+
                     b.Property<string>("TrackingKey")
                         .IsRequired()
                         .HasMaxLength(64)

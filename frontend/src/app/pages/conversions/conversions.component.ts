@@ -41,9 +41,6 @@ Chart.register(...registerables);
           <div class="metric-card animate-in" [style.animation-delay]="(i * 80) + 'ms'">
             <div class="metric-header">
               <span class="metric-icon"><app-outline-icon [name]="metric.icon" size="lg"></app-outline-icon></span>
-              <span class="metric-badge" [class]="metric.change >= 0 ? 'badge-up' : 'badge-down'">
-                {{ metric.change >= 0 ? '↑' : '↓' }} {{ formatChange(metric.change) }}%
-              </span>
             </div>
             <div class="metric-value">{{ metric.value | number }}</div>
             <div class="metric-label">{{ metric.label }}</div>
@@ -76,31 +73,31 @@ Chart.register(...registerables);
                 <span class="funnel-step-name">{{ step.label }}</span>
                 <span class="funnel-step-pct">{{ step.percentage }}%</span>
               </div>
-              @if (!last) {
-                <div class="funnel-dropout">
-                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="rgb(248, 113, 113)" stroke-width="1.5">
-                    <path d="M7 3v8M4 8l3 3 3-3" stroke-linecap="round" stroke-linejoin="round"/>
-                  </svg>
-                  <span class="dropout-text">{{ step.dropOff }}% drop-off</span>
-                </div>
-              }
             </div>
           }
         </div>
       </section>
 
-      <!-- Conversion Rate Chart -->
-      <section class="card chart-section animate-in" style="animation-delay: 500ms">
+      <!-- Conversion Rate Chart (Redesigned) -->
+      <div class="chart-card-clean animate-in" style="animation-delay: 500ms">
         <div class="chart-header">
           <div>
-            <h3 class="chart-title">Conversion Trend</h3>
+            <h3>Conversion Trend</h3>
             <p class="chart-subtitle">Daily conversions from your overview trend (last 30 days)</p>
           </div>
+          <div class="chart-legend-row">
+            <div class="chart-legend">
+              <span class="dot" style="background: #34d399"></span>
+              Conversions
+            </div>
+          </div>
         </div>
-        <div class="chart-container">
-          <canvas #conversionChart></canvas>
+        <div class="chart-body">
+          <div class="chart-container">
+            <canvas #conversionChart></canvas>
+          </div>
         </div>
-      </section>
+      </div>
     </div>
   `,
   styles: [`
@@ -138,18 +135,12 @@ Chart.register(...registerables);
       transform: translateY(-2px);
     }
 
-    .metric-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+    .metric-header { display: flex; justify-content: flex-start; align-items: center; margin-bottom: 14px; }
     .metric-icon {
       display: inline-flex;
       align-items: center;
       color: rgb(var(--color-text-muted));
     }
-    .metric-badge {
-      padding: 3px 10px; border-radius: 9999px;
-      font-size: 12px; font-weight: 600;
-    }
-    .badge-up { background: rgba(52, 211, 153, 0.12); color: rgb(52, 211, 153); }
-    .badge-down { background: rgba(248, 113, 113, 0.12); color: rgb(248, 113, 113); }
 
     .metric-value { font-size: 32px; font-weight: 700; color: rgb(var(--color-text-primary)); line-height: 1.1; margin-bottom: 4px; }
     .metric-label { font-size: 13px; color: rgb(var(--color-text-muted)); font-weight: 500; }
@@ -236,8 +227,77 @@ Chart.register(...registerables);
       font-weight: 500;
     }
 
-    /* Chart */
-    .chart-section { padding: 24px; }
+    /* Redesigned Chart Card */
+    .chart-card-clean {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 16px;
+      padding: 24px;
+      margin-bottom: 24px;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    
+    .chart-card-clean:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -2px rgba(0, 0, 0, 0.04);
+    }
+
+    .chart-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+
+    .chart-header h3 {
+      font-size: 16px;
+      font-weight: 600;
+      color: #0f172a;
+      margin: 0;
+    }
+
+    .chart-legend-row {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .chart-legend {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: #475569;
+      font-weight: 500;
+    }
+
+    .chart-legend .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+
+    .chart-legend .dot.dashed {
+      background: transparent !important;
+      border: 2px dashed;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+
+    .chart-body {
+      width: 100%;
+      position: relative;
+    }
+
+    .chart-subtitle {
+      font-size: 13px;
+      color: rgb(var(--color-text-muted));
+      margin-top: 2px;
+    }
+
     .chart-container { height: 280px; position: relative; }
 
     @media (max-width: 1024px) { .metrics-grid { grid-template-columns: repeat(2, 1fr); } }
@@ -351,10 +411,6 @@ export class ConversionsComponent implements AfterViewInit {
     setTimeout(() => this.syncChart(), 400);
   }
 
-  formatChange(val: number): string {
-    return Math.abs(val).toFixed(1);
-  }
-
   private metricIcon(type: string, index: number): string {
     const t = type.toLowerCase();
     if (t.includes('purchase') || t.includes('buy') || t.includes('cart')) return 'cart';
@@ -403,12 +459,18 @@ export class ConversionsComponent implements AfterViewInit {
           label: 'Conversions',
           data: conv,
           borderColor: '#34d399',
-          backgroundColor: gradient,
-          borderWidth: 2,
+          backgroundColor: 'rgba(52, 211, 153, 0.04)',
+          borderWidth: 3,
           fill: true,
-          tension: 0.4,
-          pointRadius: 0,
-          pointHoverRadius: 5,
+          tension: 0.1,
+          pointRadius: 4,
+          pointBackgroundColor: '#ffffff',
+          pointBorderColor: '#34d399',
+          pointBorderWidth: 2,
+          pointHoverRadius: 6,
+          pointHoverBackgroundColor: '#ffffff',
+          pointHoverBorderColor: '#34d399',
+          pointHoverBorderWidth: 3,
         }],
       },
       options: {
@@ -417,24 +479,37 @@ export class ConversionsComponent implements AfterViewInit {
         plugins: {
           legend: { display: false },
           tooltip: {
-            backgroundColor: 'rgb(22, 28, 44)',
-            borderColor: 'rgb(38, 48, 72)',
+            backgroundColor: '#ffffff',
+            titleColor: '#0f172a',
+            bodyColor: '#334155',
+            borderColor: '#cbd5e1',
             borderWidth: 1,
             cornerRadius: 8,
             padding: 12,
-            titleColor: '#fff',
-            bodyColor: 'rgb(148, 158, 188)',
+            titleFont: { family: 'Inter', size: 13, weight: 700 },
+            bodyFont: { family: 'Inter', size: 12 },
+            displayColors: true,
+            boxWidth: 8,
+            boxHeight: 8,
+            boxPadding: 4,
+            usePointStyle: true
           },
         },
         scales: {
           x: {
-            grid: { color: 'rgba(38, 48, 72, 0.5)', drawTicks: false },
-            ticks: { color: 'rgb(98, 108, 138)', font: { family: 'Inter', size: 11 }, maxRotation: 0 },
+            grid: { display: false },
+            ticks: { color: '#64748b', font: { family: 'Inter', size: 11 }, maxRotation: 0 },
             border: { display: false },
           },
           y: {
-            grid: { color: 'rgba(38, 48, 72, 0.5)', drawTicks: false },
-            ticks: { color: 'rgb(98, 108, 138)', font: { family: 'Inter', size: 11 } },
+            grid: { display: true, color: '#e2e8f0', drawTicks: false },
+            ticks: {
+              color: '#64748b',
+              font: { family: 'Inter', size: 11 },
+              callback: function(value: any) {
+                return value >= 1000 ? (value / 1000).toFixed(1).replace('.0', '') + 'k' : value;
+              }
+            },
             border: { display: false },
           },
         },

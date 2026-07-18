@@ -19,9 +19,11 @@ public sealed record SignupRequest(string Email, string Password, string? Displa
 public sealed record AuthResponse(string AccessToken, DateTime ExpiresAtUtc);
 public sealed record AuthResultDto(string AccessToken, DateTime ExpiresAtUtc, Guid UserId, string Email, string DisplayName);
 public sealed record UserProfileDto(string Email, string DisplayName);
+public sealed record UpdateProfileRequest(string DisplayName, string? Email = null);
+public sealed record ChangePasswordRequest(string CurrentPassword, string NewPassword);
 
 public sealed record SiteDto(Guid SiteId, string Domain, string Name, string TrackingKey, SitePlatform Platform);
-public sealed record RegisterSiteRequest(string Url, string? Name = null, SitePlatform? Platform = null);
+public sealed record RegisterSiteRequest(string Url, string? Name = null, SitePlatform? Platform = null, bool CompleteSetup = true);
 public sealed record TrackingKeyDto(Guid SiteId, string TrackingKey);
 public sealed record VerifyResultDto(Guid SiteId, bool IsVerified, string Details);
 public sealed record PlatformDetectionResultDto(SitePlatform Platform);
@@ -34,10 +36,16 @@ public sealed record PagePoint(string PageUrl, int Views, double AvgTimeOnPageSe
 public sealed record DevicePoint(string DeviceType, int Sessions);
 public sealed record ConversionPoint(string Type, int Count, decimal? ValueSum);
 public sealed record CountryPoint(string Country, int Sessions, double Percentage);
-public sealed record ReferrerPoint(string Source, int Visits);
+public sealed record ReferrerPoint(string Source, int Visits, double EngagementRate, double ConversionRate);
 public sealed record CampaignPoint(string Name, int Visits, int Conversions);
 public sealed record FunnelStepDto(string Step, int Entered, int Completed, double ConversionRate, double DropOffRate);
 public sealed record HeatmapPointDto(int X, int Y, int Count, int AvgScrollDepth);
+public sealed record ScrollDepthPointDto(
+    int Depth,
+    int Reached,
+    double ReachPercent,
+    string Label,
+    string Hint);
 
 public sealed record TrafficOverviewResponse(
     int Visitors,
@@ -76,7 +84,7 @@ public interface IEventCollectionService
 
 public interface IAnalyticsService
 {
-    Task<TrafficOverviewResponse> GetOverviewAsync(Guid siteId, int days, CancellationToken cancellationToken = default);
+    Task<TrafficOverviewResponse> GetOverviewAsync(Guid siteId, int days, int timezoneOffsetMinutes = 0, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<SourcePoint>> GetSourcesAsync(Guid siteId, int days, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<PagePoint>> GetPagesAsync(Guid siteId, int days, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<ConversionPoint>> GetConversionsAsync(Guid siteId, int days, CancellationToken cancellationToken = default);
@@ -98,6 +106,12 @@ public interface IFunnelService
 public interface IHeatmapService
 {
     Task<IReadOnlyList<HeatmapPointDto>> GetPageHeatmapAsync(
+        Guid siteId,
+        string pageUrl,
+        int days,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<ScrollDepthPointDto>> GetScrollDepthAsync(
         Guid siteId,
         string pageUrl,
         int days,

@@ -13,12 +13,12 @@ export class ActiveSiteService {
   readonly sites = signal<SiteDto[]>([]);
   readonly loading = signal(false);
 
-  refresh(): void {
+  refresh(preferSiteId?: string): void {
     this.loading.set(true);
     this.http.get<SiteDto[]>('/api/sites').subscribe({
       next: sites => {
         this.sites.set(sites);
-        const stored = localStorage.getItem(ActiveSiteService.storageKey);
+        const stored = preferSiteId ?? localStorage.getItem(ActiveSiteService.storageKey);
         const match = stored ? sites.find(s => s.siteId === stored) : undefined;
         const pick = match ?? sites[0] ?? null;
         this.site.set(pick);
@@ -41,9 +41,12 @@ export class ActiveSiteService {
     localStorage.setItem(ActiveSiteService.storageKey, s.siteId);
   }
 
-  register(url: string, name?: string, platform?: number): Observable<SiteDto> {
-    return this.http.post<SiteDto>('/api/sites', { url, name, platform }).pipe(
+  register(url: string, name?: string, platform?: number, completeSetup = true): Observable<SiteDto> {
+    return this.http.post<SiteDto>('/api/sites', { url, name, platform, completeSetup }).pipe(
       tap(s => {
+        // Only surface the site in the switcher/active scope once setup is complete.
+        // Wizard registrations (completeSetup=false) stay hidden until verification finishes.
+        if (!completeSetup) return;
         this.site.set(s);
         localStorage.setItem(ActiveSiteService.storageKey, s.siteId);
         this.sites.update(list => (list.some(x => x.siteId === s.siteId) ? list : [...list, s]));

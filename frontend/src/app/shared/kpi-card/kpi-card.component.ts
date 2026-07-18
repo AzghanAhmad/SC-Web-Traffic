@@ -11,10 +11,6 @@ import { OutlineIconComponent } from '../outline-icon/outline-icon.component';
     <div class="kpi-card">
       <div class="kpi-header">
         <span class="kpi-icon"><app-outline-icon [name]="data().icon" size="lg"></app-outline-icon></span>
-        <span class="kpi-badge" [class]="data().change >= 0 ? 'badge-success' : 'badge-danger'">
-          <span class="arrow">{{ data().change >= 0 ? '↑' : '↓' }}</span>
-          {{ formatChange(data().change) }}%
-        </span>
       </div>
       <div class="kpi-value">
         {{ data().prefix || '' }}{{ data().value | number }}{{ data().suffix || '' }}
@@ -58,7 +54,7 @@ import { OutlineIconComponent } from '../outline-icon/outline-icon.component';
 
     .kpi-header {
       display: flex;
-      justify-content: space-between;
+      justify-content: flex-start;
       align-items: center;
       margin-bottom: 16px;
     }
@@ -68,31 +64,6 @@ import { OutlineIconComponent } from '../outline-icon/outline-icon.component';
       align-items: center;
       justify-content: center;
       color: rgb(var(--color-text-muted));
-    }
-
-    .kpi-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 3px;
-      padding: 4px 10px;
-      border-radius: 9999px;
-      font-size: 12px;
-      font-weight: 600;
-      letter-spacing: 0.025em;
-    }
-
-    .badge-success {
-      background: rgba(52, 211, 153, 0.12);
-      color: rgb(52, 211, 153);
-    }
-
-    .badge-danger {
-      background: rgba(248, 113, 113, 0.12);
-      color: rgb(248, 113, 113);
-    }
-
-    .arrow {
-      font-size: 11px;
     }
 
     .kpi-value {
@@ -115,8 +86,4 @@ import { OutlineIconComponent } from '../outline-icon/outline-icon.component';
 export class KpiCardComponent {
   /** Signal input: zoneless-safe when parent uses signals. */
   data = input.required<KpiData>();
-
-  formatChange(val: number): string {
-    return Math.abs(val).toFixed(1);
-  }
 }

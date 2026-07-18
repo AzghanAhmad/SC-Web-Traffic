@@ -12,6 +12,7 @@ import type {
   CampaignPointDto,
   FunnelStepDto,
   HeatmapPointDto,
+  ScrollDepthPointDto,
   SiteDto,
   OnboardingDto,
   TrackingKeyDto,
@@ -51,7 +52,11 @@ export class TrafficApiService {
   }
 
   overview(siteId: string, days: number): Observable<TrafficOverviewResponse> {
-    const params = new HttpParams().set('siteId', siteId).set('days', String(days));
+    const tzOffset = -new Date().getTimezoneOffset();
+    const params = new HttpParams()
+      .set('siteId', siteId)
+      .set('days', String(days))
+      .set('tzOffset', String(tzOffset));
     return this.http.get<TrafficOverviewResponse>('/api/traffic/overview', { params });
   }
 
@@ -94,7 +99,8 @@ export class TrafficApiService {
   }
 
   funnels(siteId: string, steps: string[], days: number): Observable<FunnelStepDto[]> {
-    const stepsParam = steps.join(',');
+    // Use "|" so page URLs (which may contain commas in query strings) stay intact.
+    const stepsParam = steps.join('|');
     const params = new HttpParams()
       .set('siteId', siteId)
       .set('steps', stepsParam)
@@ -108,6 +114,14 @@ export class TrafficApiService {
       .set('pageUrl', pageUrl)
       .set('days', String(days));
     return this.http.get<HeatmapPointDto[]>('/api/traffic/heatmap', { params });
+  }
+
+  scrollDepth(siteId: string, pageUrl: string, days: number): Observable<ScrollDepthPointDto[]> {
+    const params = new HttpParams()
+      .set('siteId', siteId)
+      .set('pageUrl', pageUrl)
+      .set('days', String(days));
+    return this.http.get<ScrollDepthPointDto[]>('/api/traffic/scroll-depth', { params });
   }
 
   liveStats(siteId: string): Observable<LiveStatsDto> {

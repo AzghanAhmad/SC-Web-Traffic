@@ -300,8 +300,8 @@ export class SignupComponent {
       .pipe(finalize(() => this.isSubmitting.set(false)))
       .subscribe({
         next: () => {
-          this.successMessage.set('Account created successfully! Redirecting to the walkthrough...');
-          setTimeout(() => void this.router.navigate(['/get-started']), 800);
+          this.successMessage.set('Account created successfully! Launching the Connection Setup Wizard...');
+          setTimeout(() => void this.router.navigate(['/websites'], { queryParams: { setup: '1' } }), 800);
         },
         error: err => this.generalError.set(httpErrorMessage(err)),
       });

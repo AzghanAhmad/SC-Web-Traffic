@@ -76,7 +76,6 @@ import { httpErrorMessage } from '../../utils/analytics.helpers';
       </div>
 
       <div class="top-bar-right">
-        <button class="demo-btn" type="button" routerLink="/get-started">Demo</button>
         <button class="user-avatar" type="button" (click)="$event.stopPropagation(); menuOpen.set(!menuOpen())">
           <span>{{ auth.initials() }}</span>
         </button>
@@ -253,25 +252,6 @@ import { httpErrorMessage } from '../../utils/analytics.helpers';
     .menu-toggle:hover {
       background: rgba(255, 255, 255, 0.14);
       color: #ffffff;
-    }
-
-    .demo-btn {
-      min-width: 108px;
-      padding: 0 14px;
-      height: 36px;
-      border-radius: 10px;
-      border: 1px solid rgba(255, 255, 255, 0.18);
-      background: rgba(255, 255, 255, 0.12);
-      color: #ffffff;
-      font-size: 13px;
-      font-weight: 700;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-
-    .demo-btn:hover {
-      background: rgba(255, 255, 255, 0.22);
-      transform: translateY(-1px);
     }
 
     .brand {

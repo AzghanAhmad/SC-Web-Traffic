@@ -83,45 +83,63 @@ Chart.register(...registerables);
 
       <!-- Charts Row -->
       <div class="charts-row">
-        <!-- Traffic Over Time -->
-        <section class="card chart-card chart-card--wide animate-in" style="animation-delay: 200ms">
+        <!-- Traffic Over Time (Redesigned) -->
+        <div class="chart-card-clean chart-card--wide animate-in" style="animation-delay: 200ms">
           <div class="chart-header">
             <div>
-              <h3 class="chart-title">Traffic Over Time</h3>
+              <h3>Traffic Over Time</h3>
               <p class="chart-subtitle">Visitors & sessions trends</p>
             </div>
-            <div class="toggle-group">
-              <button [class.active]="timeRange() === '24h'" (click)="setTimeRange('24h')">24h</button>
-              <button [class.active]="timeRange() === '7d'" (click)="setTimeRange('7d')">7 days</button>
-              <button [class.active]="timeRange() === '30d'" (click)="setTimeRange('30d')">30 days</button>
+            <div class="chart-legend-row">
+              <div class="chart-legend">
+                <span class="dot" style="background: #6366f1"></span>
+                Visitors
+              </div>
+              <div class="chart-legend">
+                <span class="dot dashed" style="border-color: #a855f7"></span>
+                Sessions
+              </div>
+              <div class="toggle-group">
+                <button [class.active]="timeRange() === '24h'" (click)="setTimeRange('24h')">24h</button>
+                <button [class.active]="timeRange() === '7d'" (click)="setTimeRange('7d')">7 days</button>
+                <button [class.active]="timeRange() === '30d'" (click)="setTimeRange('30d')">30 days</button>
+              </div>
             </div>
           </div>
-          <div class="chart-container">
-            <canvas #trafficChart></canvas>
+          <div class="chart-body">
+            <div class="chart-container">
+              <canvas #trafficChart></canvas>
+            </div>
           </div>
-        </section>
+        </div>
 
-        <!-- Traffic Sources -->
-        <section class="card chart-card animate-in" style="animation-delay: 300ms">
+        <!-- Traffic Sources (Redesigned) -->
+        <div class="chart-card-clean animate-in" style="animation-delay: 300ms">
           <div class="chart-header">
             <div>
-              <h3 class="chart-title">Traffic Sources</h3>
+              <h3>Traffic Sources</h3>
               <p class="chart-subtitle">Where visitors come from</p>
             </div>
           </div>
-          <div class="chart-container donut-container">
-            <canvas #sourcesChart></canvas>
-          </div>
-          <div class="source-legend">
-            @for (source of trafficSources(); track source.name) {
-              <div class="legend-item">
-                <span class="legend-dot" [style.background]="source.color"></span>
-                <span class="legend-label">{{ source.name }}</span>
-                <span class="legend-value">{{ source.value }}%</span>
+          <div class="chart-body">
+            <div class="chart-container donut-container">
+              <canvas #sourcesChart></canvas>
+            </div>
+            @if (!trafficSources().length) {
+              <p class="chart-empty">No traffic source data yet. Sources appear when visitors arrive via links, search, social, or UTM campaigns.</p>
+            } @else {
+              <div class="source-legend">
+                @for (source of trafficSources(); track source.name) {
+                  <div class="legend-item">
+                    <span class="legend-dot" [style.background]="source.color"></span>
+                    <span class="legend-label">{{ source.name }}</span>
+                    <span class="legend-value">{{ source.value }}%</span>
+                  </div>
+                }
               </div>
             }
           </div>
-        </section>
+        </div>
       </div>
 
       <!-- Insights Panel -->
@@ -267,21 +285,68 @@ Chart.register(...registerables);
       margin-bottom: 28px;
     }
 
-    .chart-card {
+    .chart-card-clean {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 16px;
       padding: 24px;
+      margin-bottom: 24px;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    
+    .chart-card-clean:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -2px rgba(0, 0, 0, 0.04);
     }
 
     .chart-header {
       display: flex;
       justify-content: space-between;
-      align-items: flex-start;
+      align-items: center;
       margin-bottom: 20px;
     }
 
-    .chart-title {
+    .chart-header h3 {
       font-size: 16px;
       font-weight: 600;
-      color: rgb(var(--color-text-primary));
+      color: #0f172a;
+      margin: 0;
+    }
+
+    .chart-legend-row {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .chart-legend {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: #475569;
+      font-weight: 500;
+    }
+
+    .chart-legend .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+
+    .chart-legend .dot.dashed {
+      background: transparent !important;
+      border: 2px dashed;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+
+    .chart-body {
+      width: 100%;
+      position: relative;
     }
 
     .chart-subtitle {
@@ -297,13 +362,13 @@ Chart.register(...registerables);
 
     .donut-container {
       height: 220px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
+      position: relative;
+      width: 100%;
     }
 
     .donut-container canvas {
-      max-height: 100%;
+      width: 100% !important;
+      height: 100% !important;
     }
 
     .source-legend {
@@ -311,6 +376,14 @@ Chart.register(...registerables);
       flex-direction: column;
       gap: 10px;
       margin-top: 20px;
+    }
+
+    .chart-empty {
+      margin: 12px 0 0;
+      font-size: 13px;
+      color: #64748b;
+      line-height: 1.5;
+      text-align: center;
     }
 
     .legend-item {
@@ -523,30 +596,35 @@ export class OverviewComponent implements AfterViewInit {
   }
 
   private syncCharts() {
-    const series = this.timeSeriesData();
-    const sources = this.trafficSources();
-    const trafficEl = this.trafficChartRef?.nativeElement;
-    const sourcesEl = this.sourcesChartRef?.nativeElement;
+    // Defer until layout has sized the canvases (Chart.js needs non-zero parent height).
+    requestAnimationFrame(() => {
+      const series = this.timeSeriesData();
+      const sources = this.trafficSources();
+      const trafficEl = this.trafficChartRef?.nativeElement;
+      const sourcesEl = this.sourcesChartRef?.nativeElement;
 
-    if (!series.length) {
-      this.destroyTrafficChart();
-    } else if (trafficEl) {
-      if (!this.trafficChart) {
-        this.createTrafficChart();
-      } else {
-        this.updateTrafficChart();
+      if (!series.length) {
+        this.destroyTrafficChart();
+      } else if (trafficEl) {
+        if (!this.trafficChart || Chart.getChart(trafficEl) !== this.trafficChart) {
+          this.destroyTrafficChart();
+          this.createTrafficChart();
+        } else {
+          this.updateTrafficChart();
+        }
       }
-    }
 
-    if (!sources.length) {
-      this.destroySourcesChart();
-    } else if (sourcesEl) {
-      if (!this.sourcesChart) {
-        this.createSourcesChart();
-      } else {
-        this.updateSourcesChart();
+      if (!sources.length) {
+        this.destroySourcesChart();
+      } else if (sourcesEl) {
+        if (!this.sourcesChart || Chart.getChart(sourcesEl) !== this.sourcesChart) {
+          this.destroySourcesChart();
+          this.createSourcesChart();
+        } else {
+          this.updateSourcesChart();
+        }
       }
-    }
+    });
   }
 
   private updateSourcesChart() {
@@ -563,14 +641,6 @@ export class OverviewComponent implements AfterViewInit {
     const ctx = this.trafficChartRef?.nativeElement?.getContext('2d');
     if (!ctx) return;
 
-    const gradient1 = ctx.createLinearGradient(0, 0, 0, 280);
-    gradient1.addColorStop(0, 'rgba(99, 102, 241, 0.15)');
-    gradient1.addColorStop(1, 'rgba(99, 102, 241, 0)');
-
-    const gradient2 = ctx.createLinearGradient(0, 0, 0, 280);
-    gradient2.addColorStop(0, 'rgba(168, 85, 247, 0.15)');
-    gradient2.addColorStop(1, 'rgba(168, 85, 247, 0)');
-
     const series = this.timeSeriesData();
     this.trafficChart = new Chart(ctx, {
       type: 'line',
@@ -581,29 +651,36 @@ export class OverviewComponent implements AfterViewInit {
             label: 'Visitors',
             data: series.map(d => d.visitors),
             borderColor: '#6366f1',
-            backgroundColor: gradient1,
-            borderWidth: 2,
+            backgroundColor: 'rgba(99, 102, 241, 0.04)',
+            borderWidth: 3,
             fill: true,
-            tension: 0.4,
-            pointRadius: 0,
+            tension: 0.1,
+            pointRadius: 4,
+            pointBackgroundColor: '#ffffff',
+            pointBorderColor: '#6366f1',
+            pointBorderWidth: 2,
             pointHoverRadius: 6,
-            pointHoverBackgroundColor: '#6366f1',
-            pointHoverBorderColor: '#fff',
-            pointHoverBorderWidth: 2,
+            pointHoverBackgroundColor: '#ffffff',
+            pointHoverBorderColor: '#6366f1',
+            pointHoverBorderWidth: 3,
           },
           {
             label: 'Sessions',
             data: series.map(d => d.sessions),
             borderColor: '#a855f7',
-            backgroundColor: gradient2,
+            backgroundColor: 'transparent',
             borderWidth: 2,
-            fill: true,
-            tension: 0.4,
-            pointRadius: 0,
+            borderDash: [5, 5],
+            fill: false,
+            tension: 0.1,
+            pointRadius: 4,
+            pointBackgroundColor: '#ffffff',
+            pointBorderColor: '#a855f7',
+            pointBorderWidth: 2,
             pointHoverRadius: 6,
-            pointHoverBackgroundColor: '#a855f7',
-            pointHoverBorderColor: '#fff',
-            pointHoverBorderWidth: 2,
+            pointHoverBackgroundColor: '#ffffff',
+            pointHoverBorderColor: '#a855f7',
+            pointHoverBorderWidth: 3,
           },
         ],
       },
@@ -611,7 +688,7 @@ export class OverviewComponent implements AfterViewInit {
         responsive: true,
         maintainAspectRatio: false,
         layout: {
-          padding: { left: 18, right: 10 },
+          padding: { left: 10, right: 10 },
         },
         interaction: {
           mode: 'index',
@@ -623,7 +700,7 @@ export class OverviewComponent implements AfterViewInit {
             position: 'top',
             align: 'end',
             labels: {
-              color: 'rgb(148, 158, 188)',
+              color: '#475569',
               font: { family: 'Inter', size: 12 },
               boxWidth: 12,
               boxHeight: 3,
@@ -633,28 +710,28 @@ export class OverviewComponent implements AfterViewInit {
             },
           },
           tooltip: {
-            backgroundColor: 'rgb(22, 28, 44)',
-            titleColor: 'rgb(240, 242, 255)',
-            bodyColor: 'rgb(148, 158, 188)',
-            borderColor: 'rgb(38, 48, 72)',
+            backgroundColor: '#ffffff',
+            titleColor: '#0f172a',
+            bodyColor: '#334155',
+            borderColor: '#cbd5e1',
             borderWidth: 1,
             cornerRadius: 8,
             padding: 12,
-            titleFont: { family: 'Inter', weight: 600 },
-            bodyFont: { family: 'Inter' },
+            titleFont: { family: 'Inter', size: 13, weight: 700 },
+            bodyFont: { family: 'Inter', size: 12 },
             displayColors: true,
             boxWidth: 8,
             boxHeight: 8,
             boxPadding: 4,
-            usePointStyle: true,
+            usePointStyle: true
           },
         },
         scales: {
           x: {
             offset: true,
-            grid: { color: 'rgba(38, 48, 72, 0.5)', drawTicks: false },
+            grid: { display: false },
             ticks: {
-              color: 'rgb(98, 108, 138)',
+              color: '#64748b',
               font: { family: 'Inter', size: 11 },
               maxRotation: 0,
               padding: 8,
@@ -662,11 +739,14 @@ export class OverviewComponent implements AfterViewInit {
             border: { display: false },
           },
           y: {
-            grid: { color: 'rgba(38, 48, 72, 0.5)', drawTicks: false },
+            grid: { display: true, color: '#e2e8f0', drawTicks: false },
             ticks: {
-              color: 'rgb(98, 108, 138)',
+              color: '#64748b',
               font: { family: 'Inter', size: 11 },
               padding: 8,
+              callback: function(value: any) {
+                return value >= 1000 ? (value / 1000).toFixed(1).replace('.0', '') + 'k' : value;
+              }
             },
             border: { display: false },
           },
@@ -696,27 +776,27 @@ export class OverviewComponent implements AfterViewInit {
         datasets: [{
           data: sources.map(s => s.value),
           backgroundColor: sources.map(s => s.color),
-          borderColor: 'rgb(16, 20, 32)',
-          borderWidth: 3,
-          hoverOffset: 8,
+          borderColor: '#ffffff',
+          borderWidth: 2,
+          hoverOffset: 6,
         }],
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        cutout: '70%',
+        cutout: '65%',
         plugins: {
           legend: { display: false },
           tooltip: {
-            backgroundColor: 'rgb(22, 28, 44)',
-            titleColor: 'rgb(240, 242, 255)',
-            bodyColor: 'rgb(148, 158, 188)',
-            borderColor: 'rgb(38, 48, 72)',
+            backgroundColor: '#ffffff',
+            titleColor: '#0f172a',
+            bodyColor: '#334155',
+            borderColor: '#cbd5e1',
             borderWidth: 1,
             cornerRadius: 8,
             padding: 12,
-            titleFont: { family: 'Inter', weight: 600 },
-            bodyFont: { family: 'Inter' },
+            titleFont: { family: 'Inter', size: 13, weight: 700 },
+            bodyFont: { family: 'Inter', size: 12 },
             callbacks: {
               label: (context) => ` ${context.parsed}%`
             }

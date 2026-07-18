@@ -35,37 +35,56 @@ Chart.register(...registerables);
 
       <!-- Charts Row -->
       <div class="charts-row">
-        <section class="card chart-card animate-in" style="animation-delay: 100ms">
+        <!-- Visitors, Sessions & Pageviews (Redesigned) -->
+        <div class="chart-card-clean animate-in" style="animation-delay: 100ms">
           <div class="chart-header">
             <div>
-              <h3 class="chart-title">Visitors, Sessions & Pageviews</h3>
+              <h3>Visitors, Sessions & Pageviews</h3>
               <p class="chart-subtitle">Traffic metrics over time</p>
             </div>
-            <div class="toggle-group">
-              <button [class.active]="timeRange() === '24h'" (click)="setTimeRange('24h')">24h</button>
-              <button [class.active]="timeRange() === '7d'" (click)="setTimeRange('7d')">7 days</button>
-              <button [class.active]="timeRange() === '30d'" (click)="setTimeRange('30d')">30 days</button>
+            <div class="chart-legend-row">
+              <div class="chart-legend">
+                <span class="dot" style="background: #6366f1"></span>
+                Visitors
+              </div>
+              <div class="chart-legend">
+                <span class="dot dashed" style="border-color: #a855f7"></span>
+                Sessions
+              </div>
+              <div class="chart-legend">
+                <span class="dot" style="background: #34d399"></span>
+                Pageviews
+              </div>
+              <div class="toggle-group">
+                <button [class.active]="timeRange() === '24h'" (click)="setTimeRange('24h')">24h</button>
+                <button [class.active]="timeRange() === '7d'" (click)="setTimeRange('7d')">7 days</button>
+                <button [class.active]="timeRange() === '30d'" (click)="setTimeRange('30d')">30 days</button>
+              </div>
             </div>
           </div>
-          <div class="chart-container chart-tall">
-            <canvas #lineChart></canvas>
+          <div class="chart-body">
+            <div class="chart-container chart-tall">
+              <canvas #lineChart></canvas>
+            </div>
           </div>
-        </section>
+        </div>
       </div>
 
       <div class="two-col">
-        <!-- Country Traffic -->
-        <section class="card animate-in" style="animation-delay: 200ms">
+        <!-- Traffic by Country (Redesigned) -->
+        <div class="chart-card-clean animate-in" style="animation-delay: 200ms">
           <div class="chart-header">
             <div>
-              <h3 class="chart-title">Traffic by Country</h3>
-              <p class="chart-subtitle">Based on session country (IP lookup on collect, or CF-IPCountry / metadata.countryCode).</p>
+              <h3>Traffic by Country</h3>
+              <p class="chart-subtitle">Based on session country IP lookup and metadata.</p>
             </div>
           </div>
-          <div class="chart-container">
-            <canvas #countryChart></canvas>
+          <div class="chart-body">
+            <div class="chart-container">
+              <canvas #countryChart></canvas>
+            </div>
           </div>
-        </section>
+        </div>
 
         <!-- Top Referrers Table -->
         <section class="card animate-in" style="animation-delay: 300ms">
@@ -89,8 +108,8 @@ Chart.register(...registerables);
                 @if (referrers().length === 0) {
                   <tr>
                     <td colspan="4" class="empty-referrers">
-                      No referrer URLs in this range — traffic is likely <strong>direct</strong> or the <code>Referer</code> header was not sent.
-                    </td>
+                    No attributed referrers in this range yet. Sources appear when visitors arrive via a link, search, social, or UTM campaign.
+                  </td>
                   </tr>
                 } @else {
                   @for (ref of referrers(); track ref.source) {
@@ -139,10 +158,75 @@ Chart.register(...registerables);
 
     .charts-row { margin-bottom: 16px; }
 
-    .chart-card { padding: 24px; }
-    .chart-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
-    .chart-title { font-size: 16px; font-weight: 600; color: rgb(var(--color-text-primary)); }
-    .chart-subtitle { font-size: 13px; color: rgb(var(--color-text-muted)); margin-top: 2px; }
+    .chart-card-clean {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 16px;
+      padding: 24px;
+      margin-bottom: 24px;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    
+    .chart-card-clean:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -2px rgba(0, 0, 0, 0.04);
+    }
+
+    .chart-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+
+    .chart-header h3 {
+      font-size: 16px;
+      font-weight: 600;
+      color: #0f172a;
+      margin: 0;
+    }
+
+    .chart-legend-row {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .chart-legend {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: #475569;
+      font-weight: 500;
+    }
+
+    .chart-legend .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+
+    .chart-legend .dot.dashed {
+      background: transparent !important;
+      border: 2px dashed;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+
+    .chart-body {
+      width: 100%;
+      position: relative;
+    }
+
+    .chart-subtitle {
+      font-size: 13px;
+      color: rgb(var(--color-text-muted));
+      margin-top: 2px;
+    }
 
     .chart-container { height: 280px; position: relative; }
     .chart-tall { height: 340px; }
@@ -297,8 +381,8 @@ export class TrafficComponent implements AfterViewInit {
           referrers.map(r => ({
             source: r.source,
             visits: r.visits,
-            engagement: '—',
-            conversion: 0,
+            engagement: `${Math.round(r.engagementRate ?? 0)}%`,
+            conversion: Math.round((r.conversionRate ?? 0) * 10) / 10,
           })),
         );
         queueMicrotask(() => this.syncCharts());
@@ -374,52 +458,116 @@ export class TrafficComponent implements AfterViewInit {
             label: 'Visitors',
             data: series.map(d => d.visitors),
             borderColor: '#6366f1',
-            backgroundColor: 'rgba(99, 102, 241, 0.08)',
-            borderWidth: 2, fill: true, tension: 0.4,
-            pointRadius: 0, pointHoverRadius: 5,
+            backgroundColor: 'rgba(99, 102, 241, 0.04)',
+            borderWidth: 3,
+            fill: true,
+            tension: 0.1,
+            pointRadius: 4,
+            pointBackgroundColor: '#ffffff',
+            pointBorderColor: '#6366f1',
+            pointBorderWidth: 2,
+            pointHoverRadius: 6,
+            pointHoverBackgroundColor: '#ffffff',
+            pointHoverBorderColor: '#6366f1',
+            pointHoverBorderWidth: 3,
           },
           {
             label: 'Sessions',
             data: series.map(d => d.sessions),
             borderColor: '#a855f7',
-            backgroundColor: 'rgba(168, 85, 247, 0.08)',
-            borderWidth: 2, fill: true, tension: 0.4,
-            pointRadius: 0, pointHoverRadius: 5,
+            backgroundColor: 'transparent',
+            borderWidth: 2,
+            borderDash: [5, 5],
+            fill: false,
+            tension: 0.1,
+            pointRadius: 4,
+            pointBackgroundColor: '#ffffff',
+            pointBorderColor: '#a855f7',
+            pointBorderWidth: 2,
+            pointHoverRadius: 6,
+            pointHoverBackgroundColor: '#ffffff',
+            pointHoverBorderColor: '#a855f7',
+            pointHoverBorderWidth: 3,
           },
           {
             label: 'Pageviews',
             data: series.map(d => d.pageviews),
             borderColor: '#34d399',
-            backgroundColor: 'rgba(52, 211, 153, 0.08)',
-            borderWidth: 2, fill: true, tension: 0.4,
-            pointRadius: 0, pointHoverRadius: 5,
+            backgroundColor: 'transparent',
+            borderWidth: 2,
+            fill: false,
+            tension: 0.1,
+            pointRadius: 4,
+            pointBackgroundColor: '#ffffff',
+            pointBorderColor: '#34d399',
+            pointBorderWidth: 2,
+            pointHoverRadius: 6,
+            pointHoverBackgroundColor: '#ffffff',
+            pointHoverBorderColor: '#34d399',
+            pointHoverBorderWidth: 3,
           },
         ],
       },
       options: {
-        responsive: true, maintainAspectRatio: false,
+        responsive: true,
+        maintainAspectRatio: false,
         layout: {
-          padding: { left: 18, right: 10 },
+          padding: { left: 10, right: 10 },
         },
         interaction: { mode: 'index', intersect: false },
         plugins: {
           legend: {
-            position: 'top', align: 'end',
-            labels: { color: 'rgb(148, 158, 188)', font: { family: 'Inter', size: 12 }, boxWidth: 12, boxHeight: 3, useBorderRadius: true, borderRadius: 2, padding: 16 },
+            position: 'top',
+            align: 'end',
+            labels: {
+              color: '#475569',
+              font: { family: 'Inter', size: 12 },
+              boxWidth: 12,
+              boxHeight: 3,
+              useBorderRadius: true,
+              borderRadius: 2,
+              padding: 16
+            },
           },
           tooltip: {
-            backgroundColor: 'rgb(22, 28, 44)', titleColor: 'rgb(240, 242, 255)', bodyColor: 'rgb(148, 158, 188)',
-            borderColor: 'rgb(38, 48, 72)', borderWidth: 1, cornerRadius: 8, padding: 12,
+            backgroundColor: '#ffffff',
+            titleColor: '#0f172a',
+            bodyColor: '#334155',
+            borderColor: '#cbd5e1',
+            borderWidth: 1,
+            cornerRadius: 8,
+            padding: 12,
+            titleFont: { family: 'Inter', size: 13, weight: 700 },
+            bodyFont: { family: 'Inter', size: 12 },
+            displayColors: true,
+            boxWidth: 8,
+            boxHeight: 8,
+            boxPadding: 4,
+            usePointStyle: true
           },
         },
         scales: {
           x: {
             offset: true,
-            grid: { color: 'rgba(38, 48, 72, 0.5)', drawTicks: false },
-            ticks: { color: 'rgb(98, 108, 138)', font: { family: 'Inter', size: 11 }, maxRotation: 0 },
+            grid: { display: false },
+            ticks: {
+              color: '#64748b',
+              font: { family: 'Inter', size: 11 },
+              maxRotation: 0
+            },
             border: { display: false },
           },
-          y: { grid: { color: 'rgba(38, 48, 72, 0.5)', drawTicks: false }, ticks: { color: 'rgb(98, 108, 138)', font: { family: 'Inter', size: 11 } }, border: { display: false } },
+          y: {
+            grid: { display: true, color: '#e2e8f0', drawTicks: false },
+            ticks: {
+              color: '#64748b',
+              font: { family: 'Inter', size: 11 },
+              callback: function(value: any) {
+                return value >= 1000 ? (value / 1000).toFixed(1).replace('.0', '') + 'k' : value;
+              }
+            },
+            border: { display: false }
+          },
         },
       },
     });
@@ -446,15 +594,45 @@ export class TrafficComponent implements AfterViewInit {
         }],
       },
       options: {
-        responsive: true, maintainAspectRatio: false,
+        responsive: true,
+        maintainAspectRatio: false,
         indexAxis: 'y',
         plugins: {
           legend: { display: false },
-          tooltip: { backgroundColor: 'rgb(22, 28, 44)', borderColor: 'rgb(38, 48, 72)', borderWidth: 1, cornerRadius: 8, padding: 12, titleColor: '#fff', bodyColor: 'rgb(148, 158, 188)' },
+          tooltip: {
+            backgroundColor: '#ffffff',
+            titleColor: '#0f172a',
+            bodyColor: '#334155',
+            borderColor: '#cbd5e1',
+            borderWidth: 1,
+            cornerRadius: 8,
+            padding: 12,
+            titleFont: { family: 'Inter', size: 13, weight: 700 },
+            bodyFont: { family: 'Inter', size: 12 },
+            displayColors: true,
+            boxWidth: 8,
+            boxHeight: 8,
+            boxPadding: 4,
+            usePointStyle: true
+          },
         },
         scales: {
-          x: { grid: { color: 'rgba(38, 48, 72, 0.5)', drawTicks: false }, ticks: { color: 'rgb(98, 108, 138)', font: { family: 'Inter', size: 11 } }, border: { display: false } },
-          y: { grid: { display: false }, ticks: { color: 'rgb(148, 158, 188)', font: { family: 'Inter', size: 12 } }, border: { display: false } },
+          x: {
+            grid: { display: false },
+            ticks: {
+              color: '#64748b',
+              font: { family: 'Inter', size: 11 },
+              callback: function(value: any) {
+                return value >= 1000 ? (value / 1000).toFixed(1).replace('.0', '') + 'k' : value;
+              }
+            },
+            border: { display: false }
+          },
+          y: {
+            grid: { display: true, color: '#e2e8f0', drawTicks: false },
+            ticks: { color: '#64748b', font: { family: 'Inter', size: 12 } },
+            border: { display: false }
+          },
         },
       },
     });

@@ -35,18 +35,33 @@ Chart.register(...registerables);
         <p class="page-subtitle">Track and compare your campaign performance</p>
       </div>
 
-      <!-- Campaign Comparison Chart -->
-      <section class="card chart-section animate-in" style="animation-delay: 100ms">
+      <!-- Campaign Comparison Chart (Redesigned) -->
+      <div class="chart-card-clean animate-in" style="animation-delay: 100ms">
         <div class="chart-header">
           <div>
-            <h3 class="chart-title">Campaign Comparison</h3>
+            <h3>Campaign Comparison</h3>
             <p class="chart-subtitle">Visits vs conversions across campaigns</p>
           </div>
+          <div class="chart-legend-row">
+            <div class="chart-legend">
+              <span class="dot" style="background: #6366f1"></span>
+              Visits
+            </div>
+            <div class="chart-legend">
+              <span class="dot" style="background: #34d399"></span>
+              Conversions
+            </div>
+          </div>
         </div>
-        <div class="chart-container">
-          <canvas #campaignChart></canvas>
+        <div class="chart-body">
+          <div class="chart-container">
+            <canvas #campaignChart></canvas>
+            @if (!campaigns().length) {
+              <p class="chart-empty">No campaign comparison data yet.</p>
+            }
+          </div>
         </div>
-      </section>
+      </div>
 
       <!-- Campaign Table -->
       <section class="card table-section animate-in" style="animation-delay: 180ms">
@@ -103,15 +118,23 @@ Chart.register(...registerables);
               </tr>
             </thead>
             <tbody>
-              @for (campaign of campaigns(); track campaign.name) {
+              @if (!campaigns().length) {
                 <tr>
-                  <td class="campaign-name">{{ campaign.name }}</td>
-                  <td>
-                    <span class="status-badge status-active">active</span>
-                  </td>
-                  <td class="td-bold">{{ campaign.visits | number }}</td>
-                  <td class="td-bold">{{ campaign.conversions | number }}</td>
+                  <td colspan="4" class="empty-row">No campaign data yet. Add <code>?campaign=Flash%20Friday</code> or <code>?utm_campaign=summer_sale</code> to your links to track campaigns.</td>
                 </tr>
+              } @else {
+                @for (campaign of campaigns(); track campaign.name) {
+                  <tr>
+                    <td class="campaign-name">{{ campaign.name }}</td>
+                    <td>
+                      <span class="status-badge" [class.status-active]="campaign.status === 'active'" [class.status-paused]="campaign.status !== 'active'">
+                        {{ campaign.status }}
+                      </span>
+                    </td>
+                    <td class="td-bold">{{ campaign.visits | number }}</td>
+                    <td class="td-bold">{{ campaign.conversions | number }}</td>
+                  </tr>
+                }
               }
             </tbody>
           </table>
@@ -134,12 +157,82 @@ Chart.register(...registerables);
     .page-title { font-size: 24px; font-weight: 700; color: rgb(var(--color-text-primary)); letter-spacing: -0.02em; }
     .page-subtitle { font-size: 14px; color: rgb(var(--color-text-muted)); margin-top: 4px; }
 
-    .chart-section, .table-section { padding: 24px; margin-bottom: 16px; }
-    .chart-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
-    .chart-title { font-size: 16px; font-weight: 600; color: rgb(var(--color-text-primary)); }
-    .chart-subtitle { font-size: 13px; color: rgb(var(--color-text-muted)); margin-top: 2px; }
+    .table-section { padding: 24px; margin-bottom: 16px; }
+
+    /* Redesigned Chart Card */
+    .chart-card-clean {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 16px;
+      padding: 24px;
+      margin-bottom: 24px;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    
+    .chart-card-clean:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -2px rgba(0, 0, 0, 0.04);
+    }
+
+    .chart-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+
+    .chart-header h3 {
+      font-size: 16px;
+      font-weight: 600;
+      color: #0f172a;
+      margin: 0;
+    }
+
+    .chart-legend-row {
+      display: none; /* Chart.js already draws Visits / Conversions */
+    }
+
+    .chart-legend {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: #475569;
+      font-weight: 500;
+    }
+
+    .chart-legend .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+
+    .chart-legend .dot.dashed {
+      background: transparent !important;
+      border: 2px dashed;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+
+    .chart-body {
+      width: 100%;
+      position: relative;
+    }
+
+    .chart-subtitle {
+      font-size: 13px;
+      color: rgb(var(--color-text-muted));
+      margin-top: 2px;
+    }
 
     .chart-container { height: 320px; position: relative; }
+    .chart-empty {
+      position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+      margin: 0; font-size: 13px; color: #64748b; pointer-events: none;
+    }
 
     .table-wrapper { overflow-x: auto; }
 
@@ -213,7 +306,17 @@ export class CampaignsComponent implements AfterViewInit {
             status: r.visits > 0 ? 'active' : 'paused',
           })),
         );
-        this.sources.set(result.sources);
+        this.sources.set(
+          (result.sources ?? []).map(s => ({
+            ...s,
+            source:
+              !s.source || s.source.toLowerCase() === 'direct' || s.source.toLowerCase() === 'none'
+                ? 'Direct traffic'
+                : s.source.toLowerCase() === 'localhost'
+                  ? 'Local / Dev'
+                  : s.source,
+          })),
+        );
         queueMicrotask(() => this.syncChart());
       });
   }
@@ -223,12 +326,14 @@ export class CampaignsComponent implements AfterViewInit {
   }
 
   private syncChart() {
-    const canvas = this.campaignChartRef?.nativeElement;
-    if (!canvas) return;
-    Chart.getChart(canvas)?.destroy();
-    this.campaignChart = null;
-    if (!this.campaigns().length) return;
-    this.createChart();
+    requestAnimationFrame(() => {
+      const canvas = this.campaignChartRef?.nativeElement;
+      if (!canvas) return;
+      Chart.getChart(canvas)?.destroy();
+      this.campaignChart = null;
+      if (!this.campaigns().length) return;
+      this.createChart();
+    });
   }
 
   private createChart() {
@@ -261,17 +366,56 @@ export class CampaignsComponent implements AfterViewInit {
         ],
       },
       options: {
-        responsive: true, maintainAspectRatio: false,
+        responsive: true,
+        maintainAspectRatio: false,
         plugins: {
           legend: {
-            position: 'top', align: 'end',
-            labels: { color: 'rgb(148, 158, 188)', font: { family: 'Inter', size: 12 }, boxWidth: 12, boxHeight: 3, useBorderRadius: true, borderRadius: 2, padding: 16 },
+            position: 'top',
+            align: 'end',
+            labels: {
+              color: '#475569',
+              font: { family: 'Inter', size: 12 },
+              boxWidth: 12,
+              boxHeight: 3,
+              useBorderRadius: true,
+              borderRadius: 2,
+              padding: 16
+            },
           },
-          tooltip: { backgroundColor: 'rgb(22, 28, 44)', borderColor: 'rgb(38, 48, 72)', borderWidth: 1, cornerRadius: 8, padding: 12, titleColor: '#fff', bodyColor: 'rgb(148, 158, 188)' },
+          tooltip: {
+            backgroundColor: '#ffffff',
+            titleColor: '#0f172a',
+            bodyColor: '#334155',
+            borderColor: '#cbd5e1',
+            borderWidth: 1,
+            cornerRadius: 8,
+            padding: 12,
+            titleFont: { family: 'Inter', size: 13, weight: 700 },
+            bodyFont: { family: 'Inter', size: 12 },
+            displayColors: true,
+            boxWidth: 8,
+            boxHeight: 8,
+            boxPadding: 4,
+            usePointStyle: true
+          },
         },
         scales: {
-          x: { grid: { display: false }, ticks: { color: 'rgb(148, 158, 188)', font: { family: 'Inter', size: 11 }, maxRotation: 25 }, border: { display: false } },
-          y: { grid: { color: 'rgba(38, 48, 72, 0.5)', drawTicks: false }, ticks: { color: 'rgb(98, 108, 138)', font: { family: 'Inter', size: 11 } }, border: { display: false } },
+          x: {
+            grid: { display: false },
+            ticks: { color: '#64748b', font: { family: 'Inter', size: 11 }, maxRotation: 25 },
+            border: { display: false }
+          },
+          y: {
+            grid: { display: true, color: '#e2e8f0', drawTicks: false },
+            ticks: {
+              color: '#64748b',
+              font: { family: 'Inter', size: 11 },
+              callback: function(value: any) {
+                return value >= 1000 ? (value / 1000).toFixed(1).replace('.0', '') + 'k' : value;
+              }
+            },
+            border: { display: false }
+          },
         },
       },
     });

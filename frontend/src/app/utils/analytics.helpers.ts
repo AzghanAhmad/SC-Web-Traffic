@@ -45,11 +45,29 @@ export function trendToTimeSeries(trend: TrendPointDto[]): TimeSeriesPoint[] {
 }
 
 export function sourcesToTrafficSources(sources: SourcePointDto[]): TrafficSource[] {
-  return sources.map((p, i) => ({
+  // Keep every source (including Direct traffic) so the donut is never blank when sessions exist.
+  const list = sources
+    .map(p => ({
+      ...p,
+      source: prettySourceName(p.source),
+    }))
+    .filter(p => (p.source || '').trim().length > 0 && (p.sessions || 0) > 0);
+
+  const total = list.reduce((sum, p) => sum + (p.sessions || 0), 0);
+  return list.map((p, i) => ({
     name: p.source,
-    value: Math.round(p.percentage * 10) / 10,
+    value: total > 0 ? Math.round((p.sessions * 1000) / total) / 10 : Math.round(p.percentage * 10) / 10,
     color: SOURCE_COLORS[i % SOURCE_COLORS.length],
   }));
+}
+
+function prettySourceName(raw: string): string {
+  const s = (raw || '').trim();
+  if (!s) return '';
+  const lower = s.toLowerCase();
+  if (lower === 'direct' || lower === 'none') return 'Direct traffic';
+  if (lower === 'localhost' || lower === '127.0.0.1') return 'Local / Dev';
+  return s;
 }
 
 export function formatDurationSeconds(seconds: number): string {

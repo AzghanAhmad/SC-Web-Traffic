@@ -199,6 +199,27 @@ export class AuthService {
     }
   }
 
+  /** Persist display name / email to the API and local session. */
+  updateProfile(displayName: string, email?: string): Observable<{ email: string; displayName: string }> {
+    return this.http
+      .put<{ email: string; displayName: string }>('/api/Auth/me', {
+        displayName: displayName.trim(),
+        email: email?.trim() || undefined,
+      })
+      .pipe(
+        tap(profile => {
+          this.setSession({ displayName: profile.displayName, email: profile.email });
+        }),
+      );
+  }
+
+  changePassword(currentPassword: string, newPassword: string): Observable<{ message: string }> {
+    return this.http.post<{ message: string }>('/api/Auth/change-password', {
+      currentPassword,
+      newPassword,
+    });
+  }
+
   clearSession(): void {
     this.user.set(null);
     this.accessToken.set(null);
